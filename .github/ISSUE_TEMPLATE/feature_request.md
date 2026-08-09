@@ -7,23 +7,33 @@ assignees: ''
 
 ---
 
----
-name: ✨ 기능 요청
-about: 새로운 기능이나 개선 사항을 제안할 때 사용하세요
-title: "[FEAT] "
-labels: enhancement
-assignees: ''
----
-
-**어떤 문제/불편함과 관련 있나요?**
-현재 어떤 상황이 불편한지, 왜 이 기능이 필요한지 설명해주세요.
-예: OO을 할 때마다 매번 [...] 해야 해서 번거롭다.
-
-**원하는 해결 방법**
-어떤 식으로 동작하면 좋을지 구체적으로 설명해주세요.
-
-**고려해본 다른 방법**
-다른 대안이 있었다면 무엇이고, 왜 채택하지 않았는지 적어주세요.
-
-**참고 자료 / 추가 내용**
-관련 이슈, 스크린샷, 링크 등을 첨부해주세요.
+name: "✨ Feature"
+description: "새로 추가하고 싶은 기능"
+title: "[Feat] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 어떤 기능인가요?
+      placeholder: "예: 카카오 소셜 로그인 추가"
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: 왜 필요한가요?
+      placeholder: "예: 회원가입 이탈률이 높아서 간편 로그인이 필요합니다."
+    validations:
+      required: true
+  - type: textarea
+    id: tasks
+    attributes:
+      label: 작업 목록
+      value: |
+        - [ ] 
+        - [ ] 
+  - type: textarea
+    id: context
+    attributes:
+      label: 추가 참고사항
