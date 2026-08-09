@@ -1,6 +1,6 @@
 ---
-name: Refactor request
-about: Suggest an idea for this project
+name: 'Refactor '
+about: 코드 구조 개선
 title: ''
 labels: ''
 assignees: ''
