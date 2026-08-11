@@ -4,8 +4,7 @@ import {
     IsArray,
     IsBoolean,
     IsDateString,
-    IsEnum,
-    IsNotEmpty,
+    IsEnum, IsNotEmpty,
     IsOptional,
     IsString,
     IsUrl,
@@ -19,22 +18,24 @@ import {
     Mbti,
 } from '../../generated/prisma/enums';
 
-export class CreateProfileDto {
+export class UpdateProfileDto {
+    @IsOptional()
     @IsString()
-    @IsNotEmpty()
     @MaxLength(20)
-    name: string;
+    name?: string;
 
+    @IsOptional()
     @IsString()
-    @IsNotEmpty()
     @MaxLength(20)
-    nickname: string;
+    nickname?: string;
 
+    @IsOptional()
     @IsDateString()
-    birthDate: string;
+    birthDate?: string;
 
+    @IsOptional()
     @IsEnum(Gender)
-    gender: Gender;
+    gender?: Gender;
 
     @IsOptional()
     @IsEnum(Mbti)
@@ -45,21 +46,26 @@ export class CreateProfileDto {
     @MaxLength(100)
     introduction: string;
 
+    @IsOptional()
     @IsEnum(JobCategory)
-    jobCategory: JobCategory;
+    jobCategory?: JobCategory;
 
+    @IsOptional()
     @IsBoolean()
-    jobPrivate: boolean;
+    jobPrivate?: boolean;
 
+    @IsOptional()
     @IsArray()
     @ArrayMinSize(1)
     @ArrayMaxSize(5)
     @IsEnum(Hobby, { each: true })
-    hobbies: Hobby[];
+    hobbies?: Hobby[];
 
+    @IsOptional()
     @IsUrl()
-    profileImageUrl: string;
+    profileImageUrl?: string;
 
+    @IsOptional()
     @IsUrl()
-    fullBodyImageUrl: string;
+    fullBodyImageUrl?: string;
 }
