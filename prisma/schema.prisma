@@ -1,10 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
-// DB 테이블 구조 설계도
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -14,8 +7,916 @@ datasource db {
   provider = "postgresql"
 }
 
-model Test {
-  id        String   @id @default(uuid())
-  name      String
+// ============================================================
+// AUTH
+// 카카오 로그인 / 인증 / Refresh Token
+// ============================================================
+
+enum AuthProvider {
+  KAKAO
+}
+
+model Auth {
+  id               String       @id @default(uuid())
+  userId           String       @unique
+  provider         AuthProvider @default(KAKAO)
+  kakaoId          String
+  refreshTokenHash String?
+
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([provider, kakaoId])
+}
+
+// ============================================================
+// USER
+// 서비스 회원
+// ============================================================
+
+enum UserStatus {
+  ACTIVE
+  WITHDRAWN
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum Mbti {
+  ISTJ
+  ISFJ
+  INFJ
+  INTJ
+  ISTP
+  ISFP
+  INFP
+  INTP
+  ESTP
+  ESFP
+  ENFP
+  ENTP
+  ESTJ
+  ESFJ
+  ENFJ
+  ENTJ
+}
+
+enum JobCategory {
+  IT_DEVELOPMENT
+  DESIGN
+  MARKETING
+  EDUCATION
+  MEDICAL_HEALTH
+  LAW
+  FINANCE
+  ARCHITECTURE_ENGINEERING
+  ART_CREATIVE
+  FREELANCER
+  STUDENT
+  RESEARCH
+  PUBLIC_ADMINISTRATION
+  MEDIA_PUBLISHING
+  SERVICE
+}
+
+enum Hobby {
+  ART
+  CAFE
+  FOOD
+  READING
+  EXERCISE
+  IT
+  COOKING
+  SEA
+  MOVIE
+  EXHIBITION
+  PHOTO
+  ANIMAL
+  MUSIC
+  ACTIVITY
+  HISTORY
+}
+
+model User {
+  id        String     @id @default(uuid())
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  deletedAt DateTime?
+
+  auth    Auth?
+  profile Profile?
+
+  // Matching
+  matchings      Matching[]
+  matchResponses MatchResponse[]
+
+  // Payment
+  payments          Payment[]
+  extensionPayments MessageExtensionPayment[]
+
+  // Chat
+  chatMessages ChatMessage[]
+  chatQuotas   ChatMessageQuota[]
+
+  // Course
+  missionPhotos CourseMissionPhoto[]
+  courseReviews CourseReview[]
+
+  // Report
+  reportsMade     Report[] @relation("Reporter")
+  reportsReceived Report[] @relation("ReportedUser")
+
+  // Block
+  blocksMade     UserBlock[] @relation("BlockingUser")
+  blocksReceived UserBlock[] @relation("BlockedUser")
+
+  // Notification
+  notificationSetting NotificationSetting?
+  notificationLogs    NotificationLog[]
+
+  // Reward
+  pointAccount PointAccount?
+  stamps       Stamp[]
+}
+
+// ============================================================
+// PROFILE
+// 카카오 가입 이후 최초 프로필 작성 시 생성
+// User 1 : 0..1 Profile
+// ============================================================
+
+model Profile {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  name     String @db.VarChar(20)
+  nickname String @db.VarChar(20)
+
+  // 나이는 저장하지 않고 생년월일 기준으로 계산
+  birthDate DateTime @db.Date
+
+  gender Gender
+  mbti   Mbti?
+
+  // 한줄소개
+  introduce String @db.VarChar(100)
+
+  jobCategory JobCategory
+  jobPrivate  Boolean     @default(false)
+
+  hobbies Hobby[]
+
+  profileImageUrl  String @db.VarChar(500)
+  fullBodyImageUrl String @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ============================================================
+// REGION
+// ============================================================
+
+enum Region {
+  SEOUL
+  BUSAN
+  DAEGU
+  INCHEON
+  GWANGJU
+  DAEJEON
+  ULSAN
+  SEJONG
+
+  GYEONGGI
+  GANGWON
+
+  CHUNGBUK
+  CHUNGNAM
+
+  JEONBUK
+  JEONNAM
+
+  GYEONGBUK
+  GYEONGNAM
+
+  JEJU
+}
+
+// ============================================================
+// COURSE THEME
+//
+// 자연 힐링
+// 역사 문화
+// 야경 데이트
+// 사진 명소
+// 로컬 맛집 / 전통시장
+// 액티비티
+// 걷기 여행
+// 예술 감성
+// ============================================================
+
+enum CourseTheme {
+  NATURE_HEALING
+  HISTORY_CULTURE
+  NIGHT_DATE
+  PHOTO_SPOT
+  LOCAL_FOOD_MARKET
+  ACTIVITY
+  WALKING_TRIP
+  ART_SENSIBILITY
+}
+
+// ============================================================
+// MATCHING
+//
+// Matching
+// = 사용자가 시작한 하나의 매칭 사이클
+// = MatchAttempt 최대 3회
+//
+// 첫 매칭 후보 실패 이후 조건 변경 기능은 추후 MVP 확장
+// ============================================================
+
+enum PreferredGender {
+  MALE
+  FEMALE
+  ANY
+}
+
+enum MatchingStatus {
+  SEARCHING
+  WAITING_RESPONSE
+  RETRY_READY
+  PAYMENT_PENDING
+  CONFIRMED
+  EXHAUSTED
+  CANCELLED
+}
+
+model Matching {
+  id     String @id @default(uuid())
+  userId String
+
+  // 여행 희망 지역
+  region Region
+
+  // 허용 이동 거리
+  maxDistanceKm Int
+
+  // 선호 상대 나이
+  ageMin Int
+  ageMax Int
+
+  preferredGender PreferredGender @default(ANY)
+
+  // 최소 1개 ~ 최대 3개
+  // DTO에서 검증
+  themes CourseTheme[]
+
+  status MatchingStatus @default(SEARCHING)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  endedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  availableDates MatchingAvailableDate[]
+
+  attemptsAsA MatchAttempt[] @relation("MatchingA")
+  attemptsAsB MatchAttempt[] @relation("MatchingB")
+
+  @@index([userId])
+  @@index([userId, status])
+}
+
+// ============================================================
+// MATCHING AVAILABLE DATE
+// ============================================================
+
+model MatchingAvailableDate {
+  id         String   @id @default(uuid())
+  matchingId String
+  date       DateTime @db.Date
+
+  matching Matching @relation(fields: [matchingId], references: [id])
+
+  @@unique([matchingId, date])
+}
+
+// ============================================================
+// MATCH ATTEMPT
+//
+// Matching A ─┐
+//             ├─ MatchAttempt
+// Matching B ─┘
+//
+// 실제 상대 후보 한 명과 연결되는 1회의 시도
+// ============================================================
+
+enum MatchAttemptStatus {
+  WAITING_RESPONSE
+  REJECTED
+  PAYMENT_PENDING
+  CONFIRMED
+  RESPONSE_EXPIRED
+  PAYMENT_EXPIRED
+  CANCELLED
+}
+
+model MatchAttempt {
+  id String @id @default(uuid())
+
+  matchingAId String
+  matchingBId String
+
+  // 매칭 시 실제 확정된 조건
+  region     Region
+  theme      CourseTheme
+  travelDate DateTime    @db.Date
+
+  status MatchAttemptStatus @default(WAITING_RESPONSE)
+
+  respondDeadlineAt DateTime
+  paymentDeadlineAt DateTime?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  confirmedAt DateTime?
+
+  matchingA Matching @relation("MatchingA", fields: [matchingAId], references: [id])
+  matchingB Matching @relation("MatchingB", fields: [matchingBId], references: [id])
+
+  responses MatchResponse[]
+  payments  Payment[]
+
+  // 결제 완료 후 각각 생성
+  chatRoom ChatRoom?
+  course   Course?
+
+  reports Report[]
+  blocks  UserBlock[]
+
+  @@index([matchingAId])
+  @@index([matchingBId])
+  @@index([status])
+}
+
+// ============================================================
+// MATCH RESPONSE
+// 상대 후보에 대한 수락 / 거절
+// ============================================================
+
+enum MatchDecision {
+  ACCEPTED
+  REJECTED
+}
+
+model MatchResponse {
+  id             String        @id @default(uuid())
+  matchAttemptId String
+  userId         String
+  decision       MatchDecision
+
+  respondedAt DateTime @default(now())
+
+  matchAttempt MatchAttempt @relation(fields: [matchAttemptId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@unique([matchAttemptId, userId])
+}
+
+// ============================================================
+// PAYMENT
+//
+// 양쪽 모두 APPROVED
+// -> MatchAttempt CONFIRMED
+// -> ChatRoom + Course 생성
+// ============================================================
+
+enum PaymentStatus {
+  READY
+  APPROVED
+  CANCELLED
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id             String @id @default(uuid())
+  matchAttemptId String
+  userId         String
+
+  amount Int
+
+  // 지역진흥기여금
+  regionContributionAmount Int @default(0)
+
+  status PaymentStatus @default(READY)
+
+  kakaoPayTid String? @unique
+
+  approvedAt  DateTime?
+  cancelledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  matchAttempt MatchAttempt @relation(fields: [matchAttemptId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@unique([matchAttemptId, userId])
+}
+
+// ============================================================
+// CHAT
+// 결제 완료 시 생성
+// 여행 D-1부터 OPEN
+// ============================================================
+
+enum ChatRoomStatus {
+  LOCKED
+  OPEN
+  CLOSED
+  DISABLED
+}
+
+model ChatRoom {
+  id             String @id @default(uuid())
+  matchAttemptId String @unique
+
+  status ChatRoomStatus @default(LOCKED)
+
+  // 기본: 여행 전날
+  openAt DateTime
+
+  createdAt DateTime  @default(now())
+  closedAt  DateTime?
+
+  matchAttempt MatchAttempt @relation(fields: [matchAttemptId], references: [id])
+
+  messages ChatMessage[]
+  quotas   ChatMessageQuota[]
+
+  extensionPayments MessageExtensionPayment[]
+}
+
+// ============================================================
+// CHAT MESSAGE
+// ============================================================
+
+model ChatMessage {
+  id         String @id @default(uuid())
+  chatRoomId String
+  senderId   String
+
+  // 메시지 글자수 제한
+  content String @db.VarChar(200)
+
+  createdAt DateTime @default(now())
+
+  chatRoom ChatRoom @relation(fields: [chatRoomId], references: [id])
+  sender   User     @relation(fields: [senderId], references: [id])
+
+  @@index([chatRoomId, createdAt])
+}
+
+// ============================================================
+// CHAT MESSAGE QUOTA
+// 사용자별 채팅 사용 가능 횟수 관리
+// ============================================================
+
+model ChatMessageQuota {
+  id         String @id @default(uuid())
+  chatRoomId String
+  userId     String
+
+  freeCountUsed Int @default(0)
+  extendedCount Int @default(0)
+
+  chatRoom ChatRoom @relation(fields: [chatRoomId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@unique([chatRoomId, userId])
+}
+
+// ============================================================
+// MESSAGE EXTENSION PAYMENT
+// 메시지 횟수 추가 결제
+// ============================================================
+
+model MessageExtensionPayment {
+  id         String @id @default(uuid())
+  chatRoomId String
+  userId     String
+
+  extendedCount Int
+  amount        Int
+
+  status PaymentStatus @default(READY)
+
+  kakaoPayTid String? @unique
+
+  approvedAt  DateTime?
+  cancelledAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  chatRoom ChatRoom @relation(fields: [chatRoomId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@index([chatRoomId])
+  @@index([userId])
+}
+
+// ============================================================
+// COURSE
+//
+// 매칭 확정 후 서버에서 자동으로 생성하는
+// 실제 추천 여행 경로
+//
+// MatchAttempt 1 : 0..1 Course
+//
+// 별도 CourseSession 없음
+// ============================================================
+
+enum CourseStatus {
+  UPCOMING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Course {
+  id             String @id @default(uuid())
+  matchAttemptId String @unique
+
+  // 추천 코스 기본정보
+  title       String
+  description String?
+
+  // MatchAttempt 확정 정보를 snapshot으로 저장
+  region     Region
+  theme      CourseTheme
+  travelDate DateTime    @db.Date
+
+  // 전체 예상 여행 시간
+  durationMinutes Int?
+
+  thumbnailUrl String? @db.VarChar(500)
+
+  status CourseStatus @default(UPCOMING)
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  matchAttempt MatchAttempt @relation(fields: [matchAttemptId], references: [id])
+
+  spots    CourseSpot[]
+  missions CourseMission[]
+  reviews  CourseReview[]
+
+  video CourseVideo?
+
+  pointTransactions PointTransaction[]
+  stamps            Stamp[]
+}
+
+// ============================================================
+// COURSE SPOT
+//
+// 서버가 관광지 후보를 조합해 만든 실제 방문 경로
+//
+// order:
+// 1 -> 2 -> 3 -> ...
+// ============================================================
+
+model CourseSpot {
+  id       String @id @default(uuid())
+  courseId String
+
+  name    String
+  address String
+
+  latitude  Float
+  longitude Float
+
+  imageUrl String? @db.VarChar(500)
+
+  // 코스 내 방문 순서
+  order Int
+
+  // 해당 장소 예상 체류시간
+  stayMinutes Int?
+
+  // 이전 장소 -> 현재 장소 예상 이동시간
+  moveMinutesFromPrevious Int?
+
+  course Course @relation(fields: [courseId], references: [id])
+
+  missions CourseMission[]
+
+  @@unique([courseId, order])
+}
+
+// ============================================================
+// COURSE MISSION
+//
+// 추천 코스에서 수행할 인증 미션
+// ============================================================
+
+model CourseMission {
+  id       String @id @default(uuid())
+  courseId String
+
+  // 특정 관광지 미션이면 연결
+  // 코스 전체 미션이면 null
+  spotId String?
+
+  title       String
+  description String?
+
+  order      Int
+  isRequired Boolean @default(true)
+
+  course Course      @relation(fields: [courseId], references: [id])
+  spot   CourseSpot? @relation(fields: [spotId], references: [id])
+
+  photos CourseMissionPhoto[]
+
+  @@unique([courseId, order])
+}
+
+// ============================================================
+// COURSE MISSION PHOTO
+//
+// 실제 사용자의 미션 인증 사진
+//
+// CourseMission에서 Course를 알 수 있으므로
+// courseId를 중복 저장하지 않음
+// ============================================================
+
+model CourseMissionPhoto {
+  id        String @id @default(uuid())
+  missionId String
+  userId    String
+
+  imageUrl String @db.VarChar(500)
+
+  comment String? @db.VarChar(100)
+
+  createdAt DateTime @default(now())
+
+  mission CourseMission @relation(fields: [missionId], references: [id])
+  user    User          @relation(fields: [userId], references: [id])
+
+  // 사용자 한 명이 같은 미션에 인증샷 한 장
+  @@unique([missionId, userId])
+}
+
+// ============================================================
+// COURSE REVIEW
+//
+// 매칭 참가자 두 명이 각각 후기 작성 가능
+// ============================================================
+
+model CourseReview {
+  id       String @id @default(uuid())
+  courseId String
+  userId   String
+
+  content String @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course Course @relation(fields: [courseId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([courseId, userId])
+}
+
+// ============================================================
+// COURSE VIDEO
+//
+// 미션 사진을 기반으로 생성되는 AI 추억 영상
+//
+// Course 1 : 0..1 CourseVideo
+// ============================================================
+
+enum VideoStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model CourseVideo {
+  id       String @id @default(uuid())
+  courseId String @unique
+
+  status VideoStatus @default(PENDING)
+
+  videoUrl     String? @db.VarChar(500)
+  thumbnailUrl String? @db.VarChar(500)
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  course Course @relation(fields: [courseId], references: [id])
+}
+
+// ============================================================
+// REPORT
+//
+// 실제 매칭된 상대만 신고 가능
+// 참여자 여부는 Service에서 검증
+// ============================================================
+
+enum ReportReasonCode {
+  INAPPROPRIATE_PROFILE
+  NO_SHOW
+  ABUSE_HARASSMENT
+  SUSPECTED_FRAUD
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  RESOLVED
+}
+
+model Report {
+  id             String @id @default(uuid())
+  matchAttemptId String
+
+  reporterId     String
+  reportedUserId String
+
+  reasonCode ReportReasonCode
+
+  description String? @db.VarChar(500)
+
+  status ReportStatus @default(PENDING)
+
+  createdAt  DateTime  @default(now())
+  reviewedAt DateTime?
+
+  matchAttempt MatchAttempt @relation(fields: [matchAttemptId], references: [id])
+
+  reporter     User @relation("Reporter", fields: [reporterId], references: [id])
+  reportedUser User @relation("ReportedUser", fields: [reportedUserId], references: [id])
+
+  @@unique([reporterId, matchAttemptId])
+}
+
+// ============================================================
+// BLOCK
+//
+// 차단 즉시:
+// - 해당 채팅 DISABLED
+// - 이후 서로 매칭 후보에서 제외
+// ============================================================
+
+model UserBlock {
+  id             String @id @default(uuid())
+  matchAttemptId String
+
+  blockingUserId String
+  blockedUserId  String
+
+  createdAt DateTime @default(now())
+
+  matchAttempt MatchAttempt @relation(fields: [matchAttemptId], references: [id])
+
+  blockingUser User @relation("BlockingUser", fields: [blockingUserId], references: [id])
+  blockedUser  User @relation("BlockedUser", fields: [blockedUserId], references: [id])
+
+  @@unique([blockingUserId, blockedUserId])
+}
+
+// ============================================================
+// NOTIFICATION
+// 카카오 알림 설정
+// ============================================================
+
+model NotificationSetting {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  kakaoEnabled Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+enum NotificationChannel {
+  KAKAO
+}
+
+model NotificationLog {
+  id     String @id @default(uuid())
+  userId String
+
+  channel NotificationChannel
+
+  // MATCH_FOUND
+  // MATCH_CONFIRMED
+  // CHAT_OPEN
+  // COURSE_D1
+  // COURSE_COMPLETED
+  // PAYMENT_FAILED
+  type String
+
+  // SENT / FAILED
+  status String
+
+  sentAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+// ============================================================
+// REWARD
+// 포인트 + 지역 스탬프
+// ============================================================
+
+enum PointTransactionType {
+  EARN
+  USE
+  EXPIRE
+}
+
+model PointAccount {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  balance Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  transactions PointTransaction[]
+}
+
+// ============================================================
+// POINT TRANSACTION
+//
+// Course 완료 등 포인트 변화 이력
+// ============================================================
+
+model PointTransaction {
+  id             String  @id @default(uuid())
+  pointAccountId String
+  courseId       String?
+
+  type PointTransactionType
+
+  amount       Int
+  balanceAfter Int
+
+  reasonCode String
+
+  createdAt DateTime @default(now())
+
+  pointAccount PointAccount @relation(fields: [pointAccountId], references: [id])
+  course       Course?      @relation(fields: [courseId], references: [id])
+}
+
+// ============================================================
+// STAMP
+//
+// 여행 완료 후 지역 방문 스탬프 지급
+// 동일 지역 스탬프 1개 정책
+// ============================================================
+
+model Stamp {
+  id       String @id @default(uuid())
+  userId   String
+  courseId String
+
+  region Region
+
+  earnedAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  course Course @relation(fields: [courseId], references: [id])
+
+  @@unique([userId, region])
 }
