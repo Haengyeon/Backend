@@ -1,18 +1,10 @@
 ---
 name: 'Bug '
 about: 오류 개선
-title: ''
-labels: ''
+title: "[Bug]"
+labels: Bug
 assignees: ''
 
----
-
----
-name: 🐛 Bug
-about: 오류 개선
-title: "[Bug] "
-labels: bug
-assignees: ''
 ---
 
 🐛 Bug

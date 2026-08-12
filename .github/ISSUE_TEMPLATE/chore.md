@@ -1,18 +1,10 @@
 ---
 name: Chore
-about: '세팅, 문서, 설정 '
-title: ''
-labels: ''
+about: 'Chore 세팅, 문서, 설정 '
+title: "[Chore]"
+labels: invalid
 assignees: ''
 
----
-
----
-name: 🔧 Chore
-about: 세팅, 문서, 설정 등 기능/버그가 아닌 작업
-title: "[Chore] "
-labels: chore
-assignees: ''
 ---
 
 🔧 Chore
