@@ -1,26 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { CreateCourseDto } from './dto/create-course.dto';
-import { UpdateCourseDto } from './dto/update-course.dto';
+import { GenerateCoursePreviewDto } from './dto/generate-course-preview.dto';
+import { CoursePreviewService } from './algorithm/course-preview.service';
 
 @Injectable()
 export class CourseService {
-  create(createCourseDto: CreateCourseDto) {
-    return 'This action adds a new course';
-  }
+  constructor(private readonly coursePreview: CoursePreviewService) {}
 
-  findAll() {
-    return `This action returns all course`;
-  }
-
-  findOne(id: number) {
-    return `This action returns a #${id} course`;
-  }
-
-  update(id: number, updateCourseDto: UpdateCourseDto) {
-    return `This action updates a #${id} course`;
-  }
-
-  remove(id: number) {
-    return `This action removes a #${id} course`;
+  /** 코스 알고리즘만 실행한다. DB 저장 없음. */
+  preview(dto: GenerateCoursePreviewDto) {
+    return this.coursePreview.preview(dto);
   }
 }

@@ -1,3 +1,5 @@
+// .env를 process.env로 올린다. Nest는 자동으로 읽지 않는다.
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
