@@ -1,45 +1,37 @@
 import {
-  Controller,
-  Get,
-  Post,
+  BadRequestException,
   Body,
-  Patch,
-  Param,
-  Delete,
+  Controller,
+  Headers,
+  Post,
 } from '@nestjs/common';
-import { MatchingService } from './matching.service';
-import { CreateMatchingDto } from './dto/create-matching.dto';
-import { UpdateMatchingDto } from './dto/update-matching.dto';
+import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-@Controller('matching')
+import { CreateMatchingDto } from './dto/create-matching.dto';
+import { MatchingService } from './matching.service';
+
+@ApiTags('Matching')
+@Controller('matchings')
 export class MatchingController {
   constructor(private readonly matchingService: MatchingService) {}
 
   @Post()
-  create(@Body() createMatchingDto: CreateMatchingDto) {
-    return this.matchingService.create(createMatchingDto);
-  }
-
-  @Get()
-  findAll() {
-    return this.matchingService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.matchingService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(
-    @Param('id') id: string,
-    @Body() updateMatchingDto: UpdateMatchingDto,
+  @ApiOperation({
+    summary: '매칭 조건 생성',
+  })
+  @ApiHeader({
+    name: 'x-test-user-id',
+    description: '개발용 테스트 사용자 ID',
+    required: true,
+  })
+  create(
+      @Headers('x-test-user-id') userId: string,
+      @Body() createMatchingDto: CreateMatchingDto,
   ) {
-    return this.matchingService.update(+id, updateMatchingDto);
-  }
+    if (!userId) {
+      throw new BadRequestException('x-test-user-id 헤더가 필요합니다.');
+    }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.matchingService.remove(+id);
+    return this.matchingService.create(userId, createMatchingDto);
   }
 }

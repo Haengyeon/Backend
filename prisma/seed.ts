@@ -9,13 +9,26 @@ import {
     Mbti,
 } from '../src/generated/prisma/enums';
 
+// 프로덕션 DB에 실수로 시드가 실행되는 것을 방지
+if (process.env.NODE_ENV === 'production') {
+    console.error('프로덕션 환경에서는 시드 스크립트를 실행할 수 없습니다.');
+    process.exit(1);
+}
+
 const adapter = new PrismaPg({
     connectionString: process.env.DATABASE_URL,
 });
 
 const prisma = new PrismaClient({ adapter });
 
+// pravatar: 얼굴 아바타(고정 seed) / placehold.co: 실제 인물 이미지가 아닌
+// 텍스트 플레이스홀더 → 저작권/초상권 이슈 없이 항상 안정적으로 렌더링됨
+const avatarUrl = (seed: string) => `https://i.pravatar.cc/400?u=${seed}`;
+const fullBodyUrl = (label: string) =>
+    `https://placehold.co/400x800?text=${encodeURIComponent(label)}`;
+
 const TEST_USERS = [
+    // ── 남성 4명 ─────────────────────────────────────────
     {
         id: '00000000-0000-0000-0000-000000000001',
         profile: {
@@ -28,11 +41,10 @@ const TEST_USERS = [
             jobCategory: JobCategory.IT_DEVELOPMENT,
             jobPrivate: false,
             hobbies: [Hobby.CAFE, Hobby.FOOD, Hobby.PHOTO],
-            profileImageUrl: 'https://example.com/test/male-1-profile.jpg',
-            fullBodyImageUrl: 'https://example.com/test/male-1-full.jpg',
+            profileImageUrl: avatarUrl('male-1'),
+            fullBodyImageUrl: fullBodyUrl('민준'),
         },
     },
-
     {
         id: '00000000-0000-0000-0000-000000000002',
         profile: {
@@ -45,11 +57,46 @@ const TEST_USERS = [
             jobCategory: JobCategory.EDUCATION,
             jobPrivate: false,
             hobbies: [Hobby.READING, Hobby.HISTORY, Hobby.EXERCISE],
-            profileImageUrl: 'https://example.com/test/male-2-profile.jpg',
-            fullBodyImageUrl: 'https://example.com/test/male-2-full.jpg',
+            profileImageUrl: avatarUrl('male-2'),
+            fullBodyImageUrl: fullBodyUrl('도윤'),
+        },
+    },
+    {
+        // 거절 시나리오(최대 3회) 테스트용 추가 남성 후보
+        id: '00000000-0000-0000-0000-000000000005',
+        profile: {
+            name: '박현우',
+            nickname: '현우',
+            birthDate: new Date('1997-02-03'),
+            gender: Gender.MALE,
+            mbti: Mbti.ESTP,
+            introduce: '액티비티랑 바다 여행 좋아합니다.',
+            jobCategory: JobCategory.FINANCE,
+            jobPrivate: false,
+            hobbies: [Hobby.ACTIVITY, Hobby.SEA, Hobby.EXERCISE],
+            profileImageUrl: avatarUrl('male-3'),
+            fullBodyImageUrl: fullBodyUrl('현우'),
+        },
+    },
+    {
+        // 나이 범위(ageMin/ageMax) 경계값 테스트용 — 연령대가 크게 다른 후보
+        id: '00000000-0000-0000-0000-000000000006',
+        profile: {
+            name: '최우진',
+            nickname: '우진',
+            birthDate: new Date('1985-11-30'),
+            gender: Gender.MALE,
+            mbti: Mbti.INTJ,
+            introduce: '역사 유적지 탐방을 좋아합니다.',
+            jobCategory: JobCategory.IT_DEVELOPMENT,
+            jobPrivate: false,
+            hobbies: [Hobby.HISTORY, Hobby.READING, Hobby.IT],
+            profileImageUrl: avatarUrl('male-4'),
+            fullBodyImageUrl: fullBodyUrl('우진'),
         },
     },
 
+    // ── 여성 4명 ─────────────────────────────────────────
     {
         id: '00000000-0000-0000-0000-000000000003',
         profile: {
@@ -62,11 +109,10 @@ const TEST_USERS = [
             jobCategory: JobCategory.DESIGN,
             jobPrivate: false,
             hobbies: [Hobby.CAFE, Hobby.ART, Hobby.EXHIBITION],
-            profileImageUrl: 'https://i.namu.wiki/i/pkZHxKazZl0Q9udUhSpnfvvECUpQSbTAMSerVtlqDeRGqPKa9LfxSh-6qLfu1khFn1NA5jlxiIhFURhmewIpjQ.webp',
-            fullBodyImageUrl: 'https://cdn.imweb.me/thumbnail/20230228/25687782da912.png',
+            profileImageUrl: avatarUrl('female-1'),
+            fullBodyImageUrl: fullBodyUrl('정운'),
         },
     },
-
     {
         id: '00000000-0000-0000-0000-000000000004',
         profile: {
@@ -79,8 +125,42 @@ const TEST_USERS = [
             jobCategory: JobCategory.MARKETING,
             jobPrivate: false,
             hobbies: [Hobby.ACTIVITY, Hobby.SEA, Hobby.PHOTO],
-            profileImageUrl: 'https://i.pinimg.com/236x/d4/b2/b3/d4b2b3988e069b242d5a27a615edbca3.jpg',
-            fullBodyImageUrl: 'https://i.namu.wiki/i/jtQmllGb5XztKurgXD3gIH-o874OJN_LrCr37LiIhB6zhWKhWOR6Fy-VeBWtTlJtRXnvfgNkoBq4x__gGM6F6w.webp',
+            profileImageUrl: avatarUrl('female-2'),
+            fullBodyImageUrl: fullBodyUrl('소정'),
+        },
+    },
+    {
+        // 거절 시나리오(최대 3회) 테스트용 추가 여성 후보
+        id: '00000000-0000-0000-0000-000000000007',
+        profile: {
+            name: '한서연',
+            nickname: '서연',
+            birthDate: new Date('1996-07-22'),
+            gender: Gender.FEMALE,
+            mbti: Mbti.ISFJ,
+            introduce: '조용한 힐링 여행을 좋아해요.',
+            jobCategory: JobCategory.MEDICAL_HEALTH,
+            jobPrivate: false,
+            hobbies: [Hobby.READING, Hobby.COOKING, Hobby.MUSIC],
+            profileImageUrl: avatarUrl('female-3'),
+            fullBodyImageUrl: fullBodyUrl('서연'),
+        },
+    },
+    {
+        // 나이 범위 경계값 테스트용 — 연령대가 크게 다른 후보
+        id: '00000000-0000-0000-0000-000000000008',
+        profile: {
+            name: '윤아름',
+            nickname: '아름',
+            birthDate: new Date('2003-01-15'),
+            gender: Gender.FEMALE,
+            mbti: Mbti.ESFP,
+            introduce: '사진 명소랑 야경 데이트 좋아해요.',
+            jobCategory: JobCategory.STUDENT,
+            jobPrivate: false,
+            hobbies: [Hobby.PHOTO, Hobby.MOVIE, Hobby.MUSIC],
+            profileImageUrl: avatarUrl('female-4'),
+            fullBodyImageUrl: fullBodyUrl('아름'),
         },
     },
 ];
@@ -109,16 +189,19 @@ async function main() {
         });
     }
 
-    console.log('테스트 사용자 4명 생성 완료');
+    console.log(`테스트 사용자 ${TEST_USERS.length}명 생성 완료`);
+
+    const males = TEST_USERS.filter((u) => u.profile.gender === Gender.MALE);
+    const females = TEST_USERS.filter(
+        (u) => u.profile.gender === Gender.FEMALE,
+    );
 
     console.log(`
-남성
-- 민준: ${TEST_USERS[0].id}
-- 도윤: ${TEST_USERS[1].id}
+남성 (${males.length}명)
+${males.map((u) => `- ${u.profile.name}: ${u.id}`).join('\n')}
 
-여성
-- 정운: ${TEST_USERS[2].id}
-- 소정: ${TEST_USERS[3].id}
+여성 (${females.length}명)
+${females.map((u) => `- ${u.profile.name}: ${u.id}`).join('\n')}
   `);
 }
 
