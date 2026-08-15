@@ -266,9 +266,6 @@ model Matching {
   // 여행 희망 지역
   region Region
 
-  // 허용 이동 거리
-  maxDistanceKm Int
-
   // 선호 상대 나이
   ageMin Int
   ageMax Int

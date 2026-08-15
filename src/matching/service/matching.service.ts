@@ -2,16 +2,23 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 
-import { PrismaService } from '../prisma/prisma.service';
-import { UserStatus } from '../generated/prisma/enums';
-import { CreateMatchingDto } from './dto/create-matching.dto';
+import { PrismaService } from '../../prisma/prisma.service';
+import { UserStatus } from '../../generated/prisma/enums';
+import { CreateMatchingDto } from '../dto/create-matching.dto';
+import { MatchingEngineService } from './matching-engine.service';
 
 @Injectable()
 export class MatchingService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(MatchingService.name);
+
+  constructor(
+      private readonly prisma: PrismaService,
+      private readonly matchingEngine: MatchingEngineService,
+  ) {}
 
   async create(userId: string, dto: CreateMatchingDto) {
     await this.validateUser(userId);
@@ -25,7 +32,6 @@ export class MatchingService {
       },
       select: {
         id: true,
-        status: true,
       },
     });
 
@@ -33,18 +39,17 @@ export class MatchingService {
       throw new ConflictException('이미 진행 중인 매칭이 있습니다.');
     }
 
-    return this.prisma.matching.create({
+    const matching = await this.prisma.matching.create({
       data: {
         userId,
         region: dto.region,
-        maxDistanceKm: dto.maxDistanceKm,
         ageMin: dto.ageMin,
         ageMax: dto.ageMax,
         preferredGender: dto.preferredGender,
         themes: dto.themes,
 
         availableDates: {
-          create: dto.availableDates.map((date) => ({
+          create: [...new Set(dto.availableDates)].map((date) => ({
             date: this.parseDate(date),
           })),
         },
@@ -55,6 +60,23 @@ export class MatchingService {
           orderBy: {
             date: 'asc',
           },
+        },
+      },
+    });
+
+    // 조건 저장 직후 즉시 후보 탐색을 시도한다. 실패해도 이 API 응답 자체는 성공으로 처리하고
+    // Matching은 SEARCHING 상태로 남아, 추후 스케줄러(이슈 #4)가 재시도한다.
+    try {
+      await this.matchingEngine.tryMatch(matching.id);
+    } catch (error) {
+      this.logger.error('즉시 매칭 시도 중 오류 발생', error as Error);
+    }
+
+    return this.prisma.matching.findUniqueOrThrow({
+      where: { id: matching.id },
+      include: {
+        availableDates: {
+          orderBy: { date: 'asc' },
         },
       },
     });
@@ -116,6 +138,7 @@ export class MatchingService {
     }
   }
 
+  // 과거 날짜와 오늘로부터 한 달을 초과하는 날짜를 모두 거른다.
   private validateAvailableDates(availableDates: string[]) {
     const koreaDateParts = new Intl.DateTimeFormat('en-US', {
       timeZone: 'Asia/Seoul',
@@ -124,9 +147,15 @@ export class MatchingService {
       day: '2-digit',
     }).formatToParts(new Date());
 
-    const year = Number(koreaDateParts.find((p) => p.type === 'year')!.value);
-    const month = Number(koreaDateParts.find((p) => p.type === 'month')!.value);
-    const day = Number(koreaDateParts.find((p) => p.type === 'day')!.value);
+    const year = Number(
+        koreaDateParts.find((part) => part.type === 'year')!.value,
+    );
+    const month = Number(
+        koreaDateParts.find((part) => part.type === 'month')!.value,
+    );
+    const day = Number(
+        koreaDateParts.find((part) => part.type === 'day')!.value,
+    );
 
     const today = year * 10000 + month * 100 + day;
 

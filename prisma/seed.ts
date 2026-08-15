@@ -21,8 +21,6 @@ const adapter = new PrismaPg({
 
 const prisma = new PrismaClient({ adapter });
 
-// pravatar: 얼굴 아바타(고정 seed) / placehold.co: 실제 인물 이미지가 아닌
-// 텍스트 플레이스홀더 → 저작권/초상권 이슈 없이 항상 안정적으로 렌더링됨
 const avatarUrl = (seed: string) => `https://i.pravatar.cc/400?u=${seed}`;
 const fullBodyUrl = (label: string) =>
     `https://placehold.co/400x800?text=${encodeURIComponent(label)}`;
@@ -38,7 +36,7 @@ const TEST_USERS = [
             gender: Gender.MALE,
             mbti: Mbti.ENFP,
             introduce: '맛집이랑 사진 찍는 걸 좋아해요.',
-            jobCategory: JobCategory.IT_DEVELOPMENT,
+            jobCategory: JobCategory.EDUCATION,
             jobPrivate: false,
             hobbies: [Hobby.CAFE, Hobby.FOOD, Hobby.PHOTO],
             profileImageUrl: avatarUrl('male-1'),
@@ -62,8 +60,7 @@ const TEST_USERS = [
         },
     },
     {
-        // 거절 시나리오(최대 3회) 테스트용 추가 남성 후보
-        id: '00000000-0000-0000-0000-000000000005',
+        id: '00000000-0000-0000-0000-000000000003',
         profile: {
             name: '박현우',
             nickname: '현우',
@@ -79,8 +76,7 @@ const TEST_USERS = [
         },
     },
     {
-        // 나이 범위(ageMin/ageMax) 경계값 테스트용 — 연령대가 크게 다른 후보
-        id: '00000000-0000-0000-0000-000000000006',
+        id: '00000000-0000-0000-0000-000000000004',
         profile: {
             name: '최우진',
             nickname: '우진',
@@ -98,7 +94,7 @@ const TEST_USERS = [
 
     // ── 여성 4명 ─────────────────────────────────────────
     {
-        id: '00000000-0000-0000-0000-000000000003',
+        id: '00000000-0000-0000-0000-000000000005',
         profile: {
             name: '장정운',
             nickname: '짱정운',
@@ -114,7 +110,7 @@ const TEST_USERS = [
         },
     },
     {
-        id: '00000000-0000-0000-0000-000000000004',
+        id: '00000000-0000-0000-0000-000000000006',
         profile: {
             name: '곽소정',
             nickname: '소정소중해',
@@ -130,7 +126,6 @@ const TEST_USERS = [
         },
     },
     {
-        // 거절 시나리오(최대 3회) 테스트용 추가 여성 후보
         id: '00000000-0000-0000-0000-000000000007',
         profile: {
             name: '한서연',
@@ -147,7 +142,6 @@ const TEST_USERS = [
         },
     },
     {
-        // 나이 범위 경계값 테스트용 — 연령대가 크게 다른 후보
         id: '00000000-0000-0000-0000-000000000008',
         profile: {
             name: '윤아름',

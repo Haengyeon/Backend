@@ -25,26 +25,23 @@ export class CreateMatchingDto {
     @IsEnum(Region)
     region: Region;
 
-    @ApiProperty({
-        example: 30,
-        description: '허용 이동 거리(km)',
-    })
-    @IsInt()
-    @Min(1)
-    maxDistanceKm: number;
-
+    // 미성년자와의 매칭을 원천 차단하기 위해 20세 미만은 선호 나이로 설정 불가
     @ApiProperty({
         example: 20,
+        minimum: 20,
+        description: '선호 상대 최소 나이 (20세 미만 설정 불가)',
     })
     @IsInt()
-    @Min(1)
+    @Min(20, { message: '선호 상대 나이는 20세 이상으로만 설정할 수 있습니다.' })
     ageMin: number;
 
     @ApiProperty({
         example: 30,
+        minimum: 20,
+        description: '선호 상대 최대 나이 (20세 미만 설정 불가)',
     })
     @IsInt()
-    @Min(1)
+    @Min(20, { message: '선호 상대 나이는 20세 이상으로만 설정할 수 있습니다.' })
     ageMax: number;
 
     @ApiProperty({
