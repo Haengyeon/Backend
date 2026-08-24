@@ -15,7 +15,7 @@ import {
     CourseTheme,
     PreferredGender,
     Region,
-} from '../../generated/prisma/enums';
+} from '../../../generated/prisma/enums';
 
 export class CreateMatchingDto {
     @ApiProperty({

@@ -15,9 +15,9 @@ import {
 
 import { plainToInstance } from 'class-transformer';
 
-import { CreateMatchingDto } from './dto/create-matching.dto';
-import { MatchingResponseDto } from './dto/matching-response.dto';
-import { MatchingService } from './service/matching.service';
+import { CreateMatchingDto } from '../dto/request/create-matching.dto';
+import { MatchingResponseDto } from '../dto/response/matching-response.dto';
+import { MatchingService } from '../service/matching.service';
 
 @ApiTags('Matching')
 @Controller('matchings')
