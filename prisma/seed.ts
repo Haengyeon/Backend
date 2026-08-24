@@ -28,7 +28,7 @@ const fullBodyUrl = (label: string) =>
 const TEST_USERS = [
     // ── 남성 4명 ─────────────────────────────────────────
     {
-        id: '00000000-0000-0000-0000-000000000001',
+        id: '1',
         profile: {
             name: '김민준',
             nickname: '민준',
@@ -36,7 +36,7 @@ const TEST_USERS = [
             gender: Gender.MALE,
             mbti: Mbti.ENFP,
             introduce: '맛집이랑 사진 찍는 걸 좋아해요.',
-            jobCategory: JobCategory.EDUCATION,
+            jobCategory: JobCategory.IT_DEVELOPMENT,
             jobPrivate: false,
             hobbies: [Hobby.CAFE, Hobby.FOOD, Hobby.PHOTO],
             profileImageUrl: avatarUrl('male-1'),
@@ -44,7 +44,7 @@ const TEST_USERS = [
         },
     },
     {
-        id: '00000000-0000-0000-0000-000000000002',
+        id: '2',
         profile: {
             name: '이도윤',
             nickname: '도윤',
@@ -60,7 +60,8 @@ const TEST_USERS = [
         },
     },
     {
-        id: '00000000-0000-0000-0000-000000000003',
+        // 거절 시나리오(최대 3회) 테스트용 추가 남성 후보
+        id: '3',
         profile: {
             name: '박현우',
             nickname: '현우',
@@ -76,7 +77,8 @@ const TEST_USERS = [
         },
     },
     {
-        id: '00000000-0000-0000-0000-000000000004',
+        // 나이 범위(ageMin/ageMax) 경계값 테스트용 — 연령대가 크게 다른 후보
+        id: '4',
         profile: {
             name: '최우진',
             nickname: '우진',
@@ -94,7 +96,7 @@ const TEST_USERS = [
 
     // ── 여성 4명 ─────────────────────────────────────────
     {
-        id: '00000000-0000-0000-0000-000000000005',
+        id: '5',
         profile: {
             name: '장정운',
             nickname: '짱정운',
@@ -110,7 +112,7 @@ const TEST_USERS = [
         },
     },
     {
-        id: '00000000-0000-0000-0000-000000000006',
+        id: '6',
         profile: {
             name: '곽소정',
             nickname: '소정소중해',
@@ -126,7 +128,8 @@ const TEST_USERS = [
         },
     },
     {
-        id: '00000000-0000-0000-0000-000000000007',
+        // 거절 시나리오(최대 3회) 테스트용 추가 여성 후보
+        id: '7',
         profile: {
             name: '한서연',
             nickname: '서연',
@@ -142,7 +145,8 @@ const TEST_USERS = [
         },
     },
     {
-        id: '00000000-0000-0000-0000-000000000008',
+        // 나이 범위 경계값 테스트용 — 연령대가 크게 다른 후보
+        id: '8',
         profile: {
             name: '윤아름',
             nickname: '아름',

@@ -6,7 +6,7 @@ import {
     MatchingStatus,
     PreferredGender,
     Region,
-} from '../../generated/prisma/enums';
+} from '../../../generated/prisma/enums';
 
 export class MatchingResponseDto {
     @ApiProperty()

@@ -8,7 +8,7 @@ import {
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserStatus } from '../../generated/prisma/enums';
-import { CreateMatchingDto } from '../dto/create-matching.dto';
+import { CreateMatchingDto } from '../dto/request/create-matching.dto';
 import { MatchingEngineService } from './matching-engine.service';
 
 @Injectable()
