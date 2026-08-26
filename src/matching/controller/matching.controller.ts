@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   Headers,
   Post,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import {
 import {
   ApiCreatedResponse,
   ApiHeader,
+  ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
@@ -23,6 +25,40 @@ import { MatchingService } from '../service/matching.service';
 @Controller('matchings')
 export class MatchingController {
   constructor(private readonly matchingService: MatchingService) {}
+
+  // ** 'me'는 고정 경로이니 나중에 GET ':matchingId' 같은 라우트가 생기면
+  // 반드시 그것보다 위에 선언되어 있어야 함 (안 그러면 'me'가 :matchingId로 매칭돼버림)
+  @Get('me')
+  @ApiOperation({
+    summary: '내 현재 매칭 상태 조회 (폴링용, attemptId 확인용)',
+  })
+  @ApiOkResponse({
+    type: MatchingResponseDto,
+  })
+  @ApiHeader({
+    name: 'x-test-user-id',
+    description: '개발용 테스트 사용자 ID',
+    required: true,
+  })
+  async findMyActive(
+      @Headers('x-test-user-id') userId: string,
+  ): Promise<MatchingResponseDto> {
+    if (!userId) {
+      throw new BadRequestException(
+          'x-test-user-id 헤더가 필요합니다.',
+      );
+    }
+
+    const matching = await this.matchingService.findMyActive(userId);
+
+    return plainToInstance(
+        MatchingResponseDto,
+        matching,
+        {
+          excludeExtraneousValues: true,
+        },
+    );
+  }
 
   @Post()
   @ApiOperation({
