@@ -1,13 +1,18 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { MatchAttemptStatus, UserStatus } from '../../generated/prisma/enums';
+import {
+  MatchAttemptStatus,
+  MatchingStatus,
+  UserStatus,
+} from '../../generated/prisma/enums';
 import { CreateMatchingDto } from '../dto/request/create-matching.dto';
 import { MatchingEngineService } from './matching-engine.service';
 
@@ -57,7 +62,7 @@ export class MatchingService {
     });
 
     // 조건 저장 직후 즉시 후보 탐색을 시도한다. 실패해도 이 API 응답 자체는 성공으로 처리하고
-    // Matching은 SEARCHING 상태로 남아, 추후 스케줄러(시간초과 이슈)가 재시도한다.
+    // Matching은 SEARCHING 상태로 남아, 추후 스케줄러(시간초과 이슈)가 재시도함.
     try {
       await this.matchingEngine.tryMatch(matching.id);
     } catch (error) {
@@ -80,6 +85,38 @@ export class MatchingService {
     }
 
     return this.findWithCurrentAttempt(matching.id);
+  }
+
+  // 거절 후 [이대로 재탐색] 버튼 액션: 조건은 그대로 두고 RETRY_READY -> SEARCHING
+  async retry(userId: string, matchingId: string) {
+    const matching = await this.prisma.matching.findUnique({
+      where: { id: matchingId },
+    });
+
+    if (!matching) {
+      throw new NotFoundException('매칭을 찾을 수 없습니다.');
+    }
+
+    if (matching.userId !== userId) {
+      throw new ForbiddenException('해당 매칭에 대한 권한이 없습니다.');
+    }
+
+    if (matching.status !== MatchingStatus.RETRY_READY) {
+      throw new ConflictException('재탐색 가능한 상태가 아닙니다.');
+    }
+
+    await this.prisma.matching.update({
+      where: { id: matchingId },
+      data: { status: MatchingStatus.SEARCHING },
+    });
+
+    try {
+      await this.matchingEngine.tryMatch(matchingId);
+    } catch (error) {
+      this.logger.error('재탐색 시도 중 오류 발생', error as Error);
+    }
+
+    return this.findWithCurrentAttempt(matchingId);
   }
 
   // Matching + 현재 응답/결제 대기중인 MatchAttempt(있으면)를 함께 조회하는 공통 헬퍼.
