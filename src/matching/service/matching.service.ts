@@ -14,6 +14,7 @@ import {
   UserStatus,
 } from '../../generated/prisma/enums';
 import { CreateMatchingDto } from '../dto/request/create-matching.dto';
+import { UpdateMatchingDto } from '../dto/request/update-matching.dto';
 import { MatchingEngineService } from './matching-engine.service';
 
 @Injectable()
@@ -62,7 +63,7 @@ export class MatchingService {
     });
 
     // 조건 저장 직후 즉시 후보 탐색을 시도한다. 실패해도 이 API 응답 자체는 성공으로 처리하고
-    // Matching은 SEARCHING 상태로 남아, 추후 스케줄러(시간초과 이슈)가 재시도함.
+    // Matching은 SEARCHING 상태로 남아, 추후 스케줄러(시간초과 이슈)가 재시도한다.
     try {
       await this.matchingEngine.tryMatch(matching.id);
     } catch (error) {
@@ -71,6 +72,51 @@ export class MatchingService {
 
     // tryMatch가 그 자리에서 바로 상대를 찾았을 수도 있어서, currentAttempt까지 같이 조회해서 반환
     return this.findWithCurrentAttempt(matching.id);
+  }
+
+  // 거절 후 [이대로 재탐색] 버튼 액션: 조건은 그대로 두고 RETRY_READY -> SEARCHING
+  async retry(userId: string, matchingId: string) {
+    await this.validateRetryReady(userId, matchingId);
+
+    return this.resumeSearching(matchingId);
+  }
+
+  // 거절 후 [조건 수정] 버튼 액션: 보낸 필드만 갈아끼우고 재탐색
+  // rejectionCount는 일부러 리셋하지 않는다 — 조건을 바꿔도 하루 3회 제한은 그대로 유지.
+  async update(userId: string, matchingId: string, dto: UpdateMatchingDto) {
+    const matching = await this.validateRetryReady(userId, matchingId);
+
+    // 한쪽만 보내도 기존 값과 비교해서 검증해야 함 (예: ageMin만 수정한 경우)
+    const ageMin = dto.ageMin ?? matching.ageMin;
+    const ageMax = dto.ageMax ?? matching.ageMax;
+    this.validateAgeRange(ageMin, ageMax);
+
+    if (dto.availableDates) {
+      this.validateAvailableDates(dto.availableDates);
+    }
+
+    await this.prisma.matching.update({
+      where: { id: matchingId },
+      data: {
+        region: dto.region,
+        ageMin: dto.ageMin,
+        ageMax: dto.ageMax,
+        preferredGender: dto.preferredGender,
+        themes: dto.themes,
+
+        // 날짜는 부분 수정이 아니라 전체 교체 (안 보내면 기존 유지)
+        ...(dto.availableDates && {
+          availableDates: {
+            deleteMany: {},
+            create: [...new Set(dto.availableDates)].map((date) => ({
+              date: this.parseDate(date),
+            })),
+          },
+        }),
+      },
+    });
+
+    return this.resumeSearching(matchingId);
   }
 
   // 프론트가 폴링용으로 쓰는 "내 현재 매칭 상태 + attemptId 조회"
@@ -87,8 +133,8 @@ export class MatchingService {
     return this.findWithCurrentAttempt(matching.id);
   }
 
-  // 거절 후 [이대로 재탐색] 버튼 액션: 조건은 그대로 두고 RETRY_READY -> SEARCHING
-  async retry(userId: string, matchingId: string) {
+  // retry/update 공통: 소유권 + RETRY_READY 상태인지 확인하고 해당 Matching을 돌려준다.
+  private async validateRetryReady(userId: string, matchingId: string) {
     const matching = await this.prisma.matching.findUnique({
       where: { id: matchingId },
     });
@@ -105,6 +151,11 @@ export class MatchingService {
       throw new ConflictException('재탐색 가능한 상태가 아닙니다.');
     }
 
+    return matching;
+  }
+
+  // retry/update 공통: SEARCHING으로 되돌리고 즉시 재탐색을 시도한다.
+  private async resumeSearching(matchingId: string) {
     await this.prisma.matching.update({
       where: { id: matchingId },
       data: { status: MatchingStatus.SEARCHING },
@@ -120,7 +171,6 @@ export class MatchingService {
   }
 
   // Matching + 현재 응답/결제 대기중인 MatchAttempt(있으면)를 함께 조회하는 공통 헬퍼.
-  // create/findMyActive가 같은 모양의 응답을 쓰기 위해 분리해둠.
   private async findWithCurrentAttempt(matchingId: string) {
     const activeAttemptFilter = {
       where: {
