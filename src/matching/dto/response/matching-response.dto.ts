@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Expose, Transform } from 'class-transformer';
+import { Expose, Transform, Type } from 'class-transformer';
 
 import {
     CourseTheme,
@@ -7,6 +7,7 @@ import {
     PreferredGender,
     Region,
 } from '../../../generated/prisma/enums';
+import { CurrentMatchAttemptDto } from './current-match-attempt.dto';
 
 export class MatchingResponseDto {
     @ApiProperty()
@@ -55,4 +56,10 @@ export class MatchingResponseDto {
     @ApiProperty()
     @Expose()
     createdAt: Date;
+
+    // 상대와 매칭되어 응답 대기중이거나 결제 대기중일 때만 채워짐. 없으면 아직 탐색 중.
+    @ApiProperty({ type: CurrentMatchAttemptDto, nullable: true })
+    @Expose()
+    @Type(() => CurrentMatchAttemptDto)
+    currentAttempt: CurrentMatchAttemptDto | null;
 }
