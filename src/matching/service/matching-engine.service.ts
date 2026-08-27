@@ -1,18 +1,24 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { MatchingStatus, PreferredGender } from '../../generated/prisma/enums';
+import {
+    MatchDecision,
+    MatchingStatus,
+    PreferredGender,
+} from '../../generated/prisma/enums';
 import type { CourseTheme } from '../../generated/prisma/enums';
 
-const RESPOND_WINDOW_MS = 12 * 60 * 60 * 1000; // 12시간 이내 미응답 시 취소 (정책 확정값)
+const RESPOND_WINDOW_MS = 12 * 60 * 60 * 1000; // 12시간 이내 미응답 시 취소
 
-//조건 완화 단계: 위에서부터 순서대로 시도하고, 후보가 1명이라도 나오면 그 단계에서 멈춘다.
-//
+// 거절이 오간 상대를 다시 후보로 잡지 않는 기간
+// 시간초과는 사용자가 놓친 것일 수 있으므로 이 제외 대상에 포함하지 않는다.
+const REJECTION_COOLDOWN_DAYS = 30;
+
+// 조건 완화 단계: 위에서부터 순서대로 시도하고, 후보가 1명이라도 나오면 그 단계에서 멈춘다.
 // 항상 필수(완화 대상 아님):
-//   - region 완전 일치 (도 단위 선택이라 이동거리 계산은 아직 미적용 — 추후 시/군 단위로 세분화되면 도입)
+//   - region 완전 일치
 //   - availableDates 겹침 최소 1일
 //   - preferredGender 상호조건
-//
 // 아래 수치는 초기 추정치 — 실제 매칭 성사율 보면서 튜닝 필요.
 const RELAX_STAGES = [
     // 0단계: 테마가 겹치는 후보만
@@ -30,7 +36,6 @@ const matchingInclude = {
     user: { include: { profile: true } },
 } as const;
 
-// Prisma 커스텀 제너레이터의 정확한 타입 export 경로가 불확실해서,
 // Prisma.XGetPayload에 의존하지 않고 실제 쿼리 반환값에서 타입을 추론하는 방식 사용.
 function findMatchingWithRelations(prisma: PrismaService, id: string) {
     return prisma.matching.findUnique({ where: { id }, include: matchingInclude });
@@ -60,11 +65,15 @@ export class MatchingEngineService {
             matching.availableDates.map((d) => d.date.toISOString().slice(0, 10)),
         );
 
+        // 최근에 거절이 오간 상대는 다시 후보로 잡지 않는다.
+        // (거절당한 쪽은 페널티 없이 SEARCHING으로 돌아오기 때문에, 제외하지 않으면 방금 거절한 상대와 즉시 재매칭되는 문제가 생김)
+        const excludedUserIds = await this.findRecentlyRejectedUserIds(matching);
+
         for (const stage of RELAX_STAGES) {
             const pool = await this.prisma.matching.findMany({
                 where: {
                     id: { not: matching.id },
-                    userId: { not: matching.userId },
+                    userId: { notIn: [matching.userId, ...excludedUserIds] },
                     status: MatchingStatus.SEARCHING,
                     endedAt: null,
                     region: matching.region, // 도 단위 완전 일치 (항상 필수)
@@ -92,6 +101,47 @@ export class MatchingEngineService {
         }
 
         return null;
+    }
+
+    /**
+     * 최근 REJECTION_COOLDOWN_DAYS 이내에 "명시적으로 거절이 오간" 상대들의 userId 목록.
+     * 거절만 제외 대상이다. 시간초과(RESPONSE_EXPIRED / PAYMENT_EXPIRED)는 단순히 사용자가
+     * 놓친 것일 수 있으므로 다시 후보로 잡힐 수 있게 둠.
+     * 한쪽만 거절했어도 양쪽 모두 서로의 후보에서 빠짐.
+     */
+    private async findRecentlyRejectedUserIds(
+        matching: MatchingWithRelations,
+    ): Promise<string[]> {
+        const cooldownSince = new Date(
+            Date.now() - REJECTION_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
+        );
+
+        const rejectedAttempts = await this.prisma.matchAttempt.findMany({
+            where: {
+                createdAt: { gte: cooldownSince },
+                // 내 Matching 사이클이 아니라 '나'라는 사용자 기준.
+                // (EXHAUSTED 후 새 Matching을 만들어도 거절 이력이 이어지도록)
+                OR: [
+                    { matchingA: { userId: matching.userId } },
+                    { matchingB: { userId: matching.userId } },
+                ],
+                responses: {
+                    some: { decision: MatchDecision.REJECTED },
+                },
+            },
+            select: {
+                matchingA: { select: { userId: true } },
+                matchingB: { select: { userId: true } },
+            },
+        });
+
+        const userIds = rejectedAttempts.flatMap((attempt) => [
+            attempt.matchingA.userId,
+            attempt.matchingB.userId,
+        ]);
+
+        // 내 userId는 어차피 별도로 제외되므로 그대로 둬도 무방
+        return [...new Set(userIds)];
     }
 
     private isEligible(
@@ -196,7 +246,7 @@ export class MatchingEngineService {
     ) {
         try {
             return await this.prisma.$transaction(async (tx) => {
-                // 낙관적 락: 두 Matching이 여전히 SEARCHING일 때만 진행 (동시 매칭 방지)
+                // 두 Matching이 여전히 SEARCHING일 때만 진행 (동시 매칭 방지)
                 const lockA = await tx.matching.updateMany({
                     where: { id: matching.id, status: MatchingStatus.SEARCHING },
                     data: { status: MatchingStatus.WAITING_RESPONSE },
