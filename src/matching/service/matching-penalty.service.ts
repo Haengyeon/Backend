@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { MatchingStatus } from '../../generated/prisma/enums';
 
-export const DAILY_REJECTION_LIMIT = 3; // 거절/시간초과 합산 하루 3회 (정책 확정값)
+export const DAILY_REJECTION_LIMIT = 3; // 거절/시간초과 합산 하루 3회
 
 /** KST 기준 'YYYY-MM-DD' — 하루가 바뀌었는지 비교하는 용도 */
 export function toKstDateString(date: Date): string {
@@ -20,8 +20,7 @@ export function toKstDateString(date: Date): string {
     return `${year}-${month}-${day}`;
 }
 
-// Prisma 트랜잭션 클라이언트와 일반 클라이언트를 모두 받기 위한 최소 구조 타입.
-// (PrismaClient 전체 타입을 요구하면 $transaction 콜백 인자를 넘길 수 없어서 좁게 정의)
+// PrismaClient 전체 타입을 요구하면 $transaction 콜백 인자를 넘길 수 없어서 좁게 정의
 type MatchingWriter = {
     matching: {
         findUniqueOrThrow: (args: any) => Promise<any>;
