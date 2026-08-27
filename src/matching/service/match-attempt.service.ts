@@ -15,25 +15,9 @@ import {
 } from '../../generated/prisma/enums';
 import { MatchAttemptDto } from '../dto/request/match-attempt.dto';
 import { MatchingEngineService } from './matching-engine.service';
+import { MatchingPenaltyService } from './matching-penalty.service';
 
-const DAILY_REJECTION_LIMIT = 3; // 거절한 쪽 기준 하루 3회
-const PAYMENT_WINDOW_MS = 6 * 60 * 60 * 1000; // 결제 유예 6시간
-
-// KST 기준 'YYYY-MM-DD' — 하루가 바뀌었는지 비교하는 용도
-function toKstDateString(date: Date): string {
-    const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'Asia/Seoul',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-    }).formatToParts(date);
-
-    const year = parts.find((p) => p.type === 'year')!.value;
-    const month = parts.find((p) => p.type === 'month')!.value;
-    const day = parts.find((p) => p.type === 'day')!.value;
-
-    return `${year}-${month}-${day}`;
-}
+const PAYMENT_WINDOW_MS = 6 * 60 * 60 * 1000; // 결제 유예 6시간 (정책 확정값)
 
 @Injectable()
 export class MatchAttemptService {
@@ -41,6 +25,7 @@ export class MatchAttemptService {
 
     constructor(
         private readonly prisma: PrismaService,
+        private readonly penalty: MatchingPenaltyService,
         private readonly matchingEngine: MatchingEngineService,
     ) {}
 
@@ -74,7 +59,7 @@ export class MatchAttemptService {
         }
 
         if (new Date() > attempt.respondDeadlineAt) {
-            // 시간초과 자동감지(스케줄러)는 별도 이슈. 여기서는 마감 이후 수동 응답만 방어적으로 차단.
+            // 마감 지난 건은 스케줄러가 RESPONSE_EXPIRED로 처리한다. 그 사이 들어온 응답만 차단.
             throw new BadRequestException('응답 마감 시한이 지났습니다.');
         }
 
@@ -104,39 +89,18 @@ export class MatchAttemptService {
                     data: { status: MatchAttemptStatus.REJECTED },
                 });
 
-                // 거절한 쪽(나): 하루 단위 카운트 +1, 3회 도달 시 매칭 자체 종료(EXHAUSTED)
-                // 3회 미만이면 RETRY_READY — 클라이언트가 [조건수정 / 이대로 재탐색] 노출
-                const now = new Date();
-                const today = toKstDateString(now);
-                const lastRejectedDay = myMatching.lastRejectedAt
-                    ? toKstDateString(myMatching.lastRejectedAt)
-                    : null;
-                const isNewDay = lastRejectedDay !== today;
-                const newCount = isNewDay ? 1 : myMatching.rejectionCount + 1;
-                const isExhausted = newCount >= DAILY_REJECTION_LIMIT;
+                // 거절한 쪽(나): 하루 카운트 +1, 한도 도달 시 EXHAUSTED, 아니면 RETRY_READY
+                await this.penalty.applyPenalty(tx, myMatching.id);
 
-                await tx.matching.update({
-                    where: { id: myMatching.id },
-                    data: {
-                        rejectionCount: newCount,
-                        lastRejectedAt: now,
-                        ...(isExhausted
-                            ? { status: MatchingStatus.EXHAUSTED, endedAt: now }
-                            : { status: MatchingStatus.RETRY_READY }),
-                    },
-                });
-
-                // 거절당한 쪽(상대): 카운트 변화 없음, 즉시 재탐색 가능 상태로 복귀
-                await tx.matching.update({
-                    where: { id: otherMatching.id },
-                    data: { status: MatchingStatus.SEARCHING },
-                });
+                // 거절당한 쪽(상대): 카운트 변화 없이 즉시 재탐색 가능 상태로 복귀
+                await this.penalty.releaseWithoutPenalty(tx, otherMatching.id);
 
                 return { attempt: updatedAttempt, requeueMatchingId: otherMatching.id };
             }
 
-            // ACCEPTED: 상대방이 이미 수락했는지 확인 (거절이었다면 위에서 이미 걸러졌으므로,
-            // 상대방 응답이 존재한다면 그건 반드시 ACCEPTED)
+            /* ACCEPTED: 상대방이 이미 수락했는지 확인 (거절이었다면 위에서 이미 걸러졌으므로,
+            * 상대방 응답이 존재한다면 그건 반드시 ACCEPTED)
+             */
             const otherAlreadyAccepted = attempt.responses.some(
                 (r) => r.userId === otherMatching.userId,
             );
@@ -146,7 +110,7 @@ export class MatchAttemptService {
                 return { attempt, requeueMatchingId: null };
             }
 
-            // 양쪽 다 수락 -> 결제 대기
+            // 양쪽 다 수락 -> 결제 대기로 전이
             const paymentDeadlineAt = new Date(Date.now() + PAYMENT_WINDOW_MS);
 
             const updatedAttempt = await tx.matchAttempt.update({
@@ -169,7 +133,7 @@ export class MatchAttemptService {
             return { attempt: updatedAttempt, requeueMatchingId: null };
         });
 
-        // 거절당한 쪽은 사용자 액션 없이 즉시 재탐색. 트랜잭션 커밋 이후, 응답 자체는 지연시키지 않는다.
+        // 거절당한 쪽은 사용자 액션 없이 즉시 재탐색. 트랜잭션 커밋 이후 응답 자체는 지연시키지 않음.
         if (result.requeueMatchingId) {
             this.matchingEngine
                 .tryMatch(result.requeueMatchingId)
