@@ -17,7 +17,7 @@ import { MatchAttemptDto } from '../dto/request/match-attempt.dto';
 import { MatchingEngineService } from './matching-engine.service';
 import { MatchingPenaltyService } from './matching-penalty.service';
 
-const PAYMENT_WINDOW_MS = 6 * 60 * 60 * 1000; // 결제 유예 6시간 (정책 확정값)
+const PAYMENT_WINDOW_MS = 6 * 60 * 60 * 1000; // 결제 유예 6시간
 
 @Injectable()
 export class MatchAttemptService {
@@ -28,6 +28,79 @@ export class MatchAttemptService {
         private readonly penalty: MatchingPenaltyService,
         private readonly matchingEngine: MatchingEngineService,
     ) {}
+
+    async findOne(userId: string, matchAttemptId: string) {
+        const attempt = await this.prisma.matchAttempt.findUnique({
+            where: {id: matchAttemptId},
+            include: {
+                matchingA: {
+                    select: {userId: true, user: {select: {profile: true}}},
+                },
+                matchingB: {
+                    select: {userId: true, user: {select: {profile: true}}},
+                },
+                responses: {select: {userId: true, decision: true}},
+            },
+        });
+
+        if (!attempt) {
+            throw new NotFoundException('매칭 시도를 찾을 수 없습니다.');
+        }
+
+        const isSideA = attempt.matchingA.userId === userId;
+        const isSideB = attempt.matchingB.userId === userId;
+
+        if (!isSideA && !isSideB) {
+            throw new ForbiddenException('해당 매칭에 대한 권한이 없습니다.');
+        }
+
+        const partnerSide = isSideA ? attempt.matchingB : attempt.matchingA;
+        const partnerProfile = partnerSide.user.profile;
+
+        if (!partnerProfile) {
+            throw new NotFoundException('상대방 프로필을 찾을 수 없습니다.');
+        }
+
+        const myResponse = attempt.responses.find((r) => r.userId === userId);
+
+        return {
+            id: attempt.id,
+            status: attempt.status,
+            travelDate: attempt.travelDate,
+            paymentDeadlineAt: attempt.paymentDeadlineAt,
+
+            myResponded: Boolean(myResponse),
+            myDecision: myResponse?.decision ?? null,
+
+            partner: {
+                nickname: partnerProfile.nickname,
+                age: this.calcAge(partnerProfile.birthDate),
+                gender: partnerProfile.gender,
+                // 비공개로 설정한 경우 직업을 내려주지 않는다
+                jobCategory: partnerProfile.jobPrivate
+                    ? null
+                    : partnerProfile.jobCategory,
+                mbti: partnerProfile.mbti,
+                introduce: partnerProfile.introduce,
+                hobbies: partnerProfile.hobbies,
+                fullBodyImageUrl: partnerProfile.fullBodyImageUrl,
+            },
+        };
+    }
+
+    private calcAge(birthDate: Date, at: Date = new Date()): number {
+        let age = at.getFullYear() - birthDate.getFullYear();
+
+        const beforeBirthday =
+            at.getMonth() < birthDate.getMonth() ||
+            (at.getMonth() === birthDate.getMonth() &&
+                at.getDate() < birthDate.getDate());
+
+        if (beforeBirthday) age -= 1;
+
+        return age;
+    }
+
 
     async respond(
         userId: string,
