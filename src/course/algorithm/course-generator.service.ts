@@ -7,9 +7,17 @@
 //  4. Course / CourseSpot / CourseMission을 트랜잭션으로 저장
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CourseTheme, Hobby } from '../../generated/prisma/enums';
+import { intersectHobbies, selectTheme } from './theme-selection';
+import { isUniqueViolation } from '../prisma-error.util';
 import { CoursePlanningError, buildCoursePlan } from './course-planner';
 import { templateFor } from './course-template';
-import { REGION_LABEL, THEME_DESCRIPTION, THEME_LABEL } from './labels';
+import {
+  REGION_LABEL,
+  THEME_DESCRIPTION,
+  THEME_LABEL,
+  categoryLabelOf,
+} from './labels';
 import { THEME_FILTER, toPoolQueries } from './tour-category';
 import { TourApiClient } from './tour-api.client';
 import { CoursePlan } from './types';
@@ -34,10 +42,13 @@ export class CourseGeneratorService {
     const existing = await this.findCourseId(matchAttemptId);
     if (existing) return existing;
 
-    // 매칭 기능이 없어 MatchAttempt 테이블이 비어 있다.
-    // region / theme / travelDate 세 값만 채워진 레코드가 있으면 아래는 그대로 돈다.
+    // 두 사람의 테마와 취미가 필요해 Matching과 Profile까지 함께 읽는다
     const attempt = await this.prisma.matchAttempt.findUnique({
       where: { id: matchAttemptId },
+      include: {
+        matchingA: { include: { user: { include: { profile: true } } } },
+        matchingB: { include: { user: { include: { profile: true } } } },
+      },
     });
     if (!attempt) {
       throw new NotFoundException(
@@ -45,19 +56,21 @@ export class CourseGeneratorService {
       );
     }
 
-    const template = templateFor(attempt.theme);
+    const theme = this.decideTheme(attempt);
+
+    const template = templateFor(theme);
     const queries = toPoolQueries([
       ...template.map((slot) => slot.filter),
-      THEME_FILTER[attempt.theme],
+      THEME_FILTER[theme],
     ]);
 
     const pool = await this.tourApi.fetchPool(attempt.region, queries);
     this.logger.log(
-      `후보 풀 ${pool.length}건 (region=${attempt.region}, theme=${attempt.theme}, 호출 ${queries.length}회)`,
+      `후보 풀 ${pool.length}건 (region=${attempt.region}, theme=${theme}, 호출 ${queries.length}회)`,
     );
 
     const plan = buildCoursePlan(
-      { region: attempt.region, theme: attempt.theme, seed: matchAttemptId },
+      { region: attempt.region, theme, seed: matchAttemptId },
       pool,
     );
 
@@ -79,6 +92,52 @@ export class CourseGeneratorService {
     }
   }
 
+  /**
+   * 코스에 쓸 테마를 정한다. 취미가 반영되는 유일한 지점이다.
+   *
+   * MatchAttempt.theme은 매칭 엔진이 "겹치는 첫 번째 테마"로 잡아 둔 값이라
+   * 두 사람이 테마를 입력한 순서에 따라 결과가 달라진다. 여기서 공통 취미
+   * 연관도를 합산해 다시 고르고, 아래 persist에서 MatchAttempt.theme에도
+   * 같은 값을 써 넣어 둘이 어긋나지 않게 한다.
+   *
+   * 테마가 안 겹치는데 취미만으로 성사된 매칭도 있어서, 그때는 고를 근거가
+   * 없으므로 매칭이 정한 값을 그대로 쓴다.
+   */
+  private decideTheme(attempt: {
+    theme: CourseTheme;
+    matchingA: {
+      themes: CourseTheme[];
+      user: { profile: { hobbies: Hobby[] } | null };
+    };
+    matchingB: {
+      themes: CourseTheme[];
+      user: { profile: { hobbies: Hobby[] } | null };
+    };
+  }): CourseTheme {
+    const commonHobbies = intersectHobbies(
+      attempt.matchingA.user.profile?.hobbies ?? [],
+      attempt.matchingB.user.profile?.hobbies ?? [],
+    );
+
+    const picked = selectTheme(
+      attempt.matchingA.themes,
+      attempt.matchingB.themes,
+      commonHobbies,
+    );
+
+    if (!picked) return attempt.theme;
+
+    if (picked.theme !== attempt.theme) {
+      this.logger.log(
+        `테마 재선정: ${attempt.theme} -> ${picked.theme} ` +
+          `(공통취미 ${commonHobbies.join(',') || '없음'}, ` +
+          `점수 ${picked.scores.map((s) => `${s.theme}:${s.score}`).join(' ')})`,
+      );
+    }
+
+    return picked.theme;
+  }
+
   private findCourseId(matchAttemptId: string) {
     return this.prisma.course.findUnique({
       where: { matchAttemptId },
@@ -96,6 +155,12 @@ export class CourseGeneratorService {
     const themeLabel = THEME_LABEL[plan.theme];
 
     return this.prisma.$transaction(async (tx) => {
+      // 재선정된 테마를 매칭 쪽에도 반영해 둘이 어긋나지 않게 한다
+      await tx.matchAttempt.update({
+        where: { id: matchAttemptId },
+        data: { theme: plan.theme },
+      });
+
       const course = await tx.course.create({
         data: {
           matchAttemptId,
@@ -105,6 +170,8 @@ export class CourseGeneratorService {
           theme: plan.theme,
           travelDate,
           durationMinutes: plan.durationMinutes,
+          // 표시용 값이라 소수점 한 자리로 줄여서 저장한다
+          totalDistanceKm: Math.round(plan.totalDistanceKm * 10) / 10,
           thumbnailUrl: plan.spots[0].spot.firstImage,
         },
       });
@@ -116,6 +183,11 @@ export class CourseGeneratorService {
             contentId: planned.spot.contentId,
             name: planned.spot.title,
             address: planned.spot.address,
+            role: planned.role,
+            category: categoryLabelOf(
+              planned.spot.lclsSystm1,
+              planned.spot.lclsSystm2,
+            ),
             latitude: planned.spot.latitude,
             longitude: planned.spot.longitude,
             imageUrl: planned.spot.firstImage,
@@ -140,15 +212,6 @@ export class CourseGeneratorService {
       return { id: course.id };
     });
   }
-}
-
-/** Prisma 유니크 제약 위반(P2002) 여부 */
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: string }).code === 'P2002'
-  );
 }
 
 export { CoursePlanningError };
