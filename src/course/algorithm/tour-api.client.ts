@@ -48,8 +48,22 @@ export class TourApiClient {
    * 대분류별로 1회씩만 호출하고, 중분류 필터링과 반경 탐색은 메모리에서 처리한다.
    */
   async fetchPool(region: Region, queries: PoolQuery[]): Promise<TourSpot[]> {
-    const areaCode = AREA_CODE[region];
+    return this.fetch(queries, AREA_CODE[region]);
+  }
 
+  /**
+   * 지역을 정하지 않고 전국에서 받아온다.
+   * areaCode를 빼면 TourAPI가 전국을 준다. 프로필에 지역이 없어서
+   * 어디를 추천할지 모를 때 쓴다.
+   */
+  async fetchNationwide(queries: PoolQuery[]): Promise<TourSpot[]> {
+    return this.fetch(queries);
+  }
+
+  private async fetch(
+    queries: PoolQuery[],
+    areaCode?: string,
+  ): Promise<TourSpot[]> {
     const results = await Promise.all(
       queries.map((query) => this.fetchOne(areaCode, query)),
     );
@@ -65,20 +79,21 @@ export class TourApiClient {
   }
 
   private async fetchOne(
-    areaCode: string,
+    areaCode: string | undefined,
     query: PoolQuery,
   ): Promise<TourSpot[]> {
     const params = new URLSearchParams({
       MobileOS: 'ETC',
       MobileApp: 'Haengyeon',
       _type: 'json',
-      areaCode,
       numOfRows: String(NUM_OF_ROWS),
       pageNo: '1',
       // 대표이미지 보유 순
       arrange: 'R',
     });
 
+    // 빼면 전국
+    if (areaCode) params.set('areaCode', areaCode);
     if (query.lclsSystm1) params.set('lclsSystm1', query.lclsSystm1);
     if (query.contentTypeId) params.set('contentTypeId', query.contentTypeId);
 
@@ -92,7 +107,7 @@ export class TourApiClient {
 
       if (!response.ok) {
         this.logger.warn(
-          `TourAPI 응답 실패 (${response.status}) areaCode=${areaCode} ${JSON.stringify(query)}`,
+          `TourAPI 응답 실패 (${response.status}) areaCode=${areaCode ?? '전국'} ${JSON.stringify(query)}`,
         );
         return [];
       }
@@ -102,7 +117,7 @@ export class TourApiClient {
     } catch (error) {
       // 조회 1건이 실패해도 나머지로 코스를 만들 수 있어야 한다
       this.logger.warn(
-        `TourAPI 호출 실패 areaCode=${areaCode} ${JSON.stringify(query)}: ${error}`,
+        `TourAPI 호출 실패 areaCode=${areaCode ?? '전국'} ${JSON.stringify(query)}: ${error}`,
       );
       return [];
     }

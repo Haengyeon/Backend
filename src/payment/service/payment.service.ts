@@ -9,6 +9,7 @@ import {
 import {PrismaService} from "../../prisma/prisma.service";
 import {KakaoPayClient} from "./kakao-pay.client";
 import {MatchAttemptStatus, MatchingStatus, PaymentStatus} from "../../generated/prisma/enums";
+import { CourseGeneratorService } from '../../course/algorithm/course-generator.service';
 
 const PAYMENT_AMOUNT = 25_000; //1인당 결제 금액
 const ITEM_NAME = '행연 매칭 참가비';
@@ -20,6 +21,7 @@ export class PaymentService {
   constructor(
       private readonly prisma: PrismaService,
       private readonly kakaoPay: KakaoPayClient,
+      private readonly courseGenerator: CourseGeneratorService,
   ) {}
 
   //결제준비: 카카오에 tid 발급받고 결제창 url 반환
@@ -157,6 +159,15 @@ export class PaymentService {
     });
 
     this.logger.log(`매칭 확정: attempt=${matchAttemptId}`);
+
+    // 확정되면 코스를 만든다.
+    // TourAPI 호출이 섞여 있어 시간이 걸리므로 결제 응답을 막지 않고 던져 둔다.
+    // 실패하면 코스 없이 지나가므로 POST /api/v1/courses/regenerate로 다시 시도한다.
+    this.courseGenerator
+      .generateForMatchAttempt(matchAttemptId)
+      .catch((error) =>
+        this.logger.error('매칭 확정 후 코스 생성 중 오류', error as Error),
+      );
 
     return true;
   }
