@@ -9,9 +9,10 @@ import {
 import {PrismaService} from "../../prisma/prisma.service";
 import {KakaoPayClient} from "./kakao-pay.client";
 import {MatchAttemptStatus, MatchingStatus, PaymentStatus} from "../../generated/prisma/enums";
+import {ChatRoomService} from "../../chat/service/chat-room.service";
 
 const PAYMENT_AMOUNT = 25_000; //1인당 결제 금액
-const ITEM_NAME = '행연 매칭 참가비';
+const ITEM_NAME = '행연 참가비';
 
 @Injectable()
 export class PaymentService {
@@ -20,6 +21,7 @@ export class PaymentService {
   constructor(
       private readonly prisma: PrismaService,
       private readonly kakaoPay: KakaoPayClient,
+      private readonly chatRoom: ChatRoomService,
   ) {}
 
   //결제준비: 카카오에 tid 발급받고 결제창 url 반환
@@ -154,6 +156,13 @@ export class PaymentService {
         },
         data: { status: MatchingStatus.CONFIRMED },
       });
+
+      // 확정과 동시에 채팅방 생성 (여행 전날 00시 KST에 스케줄러가 열어줌)
+      await this.chatRoom.createForConfirmedAttempt(tx, {
+        matchAttemptId,
+        travelDate: attempt.travelDate,
+        userIds: attempt.payments.map((p) => p.userId),
+      });
     });
 
     this.logger.log(`매칭 확정: attempt=${matchAttemptId}`);
@@ -195,18 +204,18 @@ export class PaymentService {
   }
 
 // 카카오 결제 후 사용자를 돌려보낼 주소(프론트도메인)
-    private buildRedirectUrl(
-        kind: 'APPROVAL' | 'CANCEL' | 'FAIL',
-        paymentId: string,
-    ): string {
-      const base = process.env.FRONTEND_BASE_URL ?? 'http://localhost:3000';
+  private buildRedirectUrl(
+      kind: 'APPROVAL' | 'CANCEL' | 'FAIL',
+      paymentId: string,
+  ): string {
+    const base = process.env.FRONTEND_BASE_URL ?? 'http://localhost:3000';
 
-      const path = {
-        APPROVAL: '/payments/success',
-        CANCEL: '/payments/cancel',
-        FAIL: '/payments/fail',
-      }[kind];
+    const path = {
+      APPROVAL: '/payments/success',
+      CANCEL: '/payments/cancel',
+      FAIL: '/payments/fail',
+    }[kind];
 
-      return `${base}${path}?paymentId=${paymentId}`;
-    }
+    return `${base}${path}?paymentId=${paymentId}`;
+  }
 }
