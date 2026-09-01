@@ -344,18 +344,18 @@ export class CourseQueryService {
     return {
       partnerUserId: partner.userId,
       partnerProfile: partner.user.profile as {
-        nickname: string;
+        name: string;
         profileImageUrl: string;
       } | null,
     };
   }
 
   private toPartnerDto(
-    profile: { nickname: string; profileImageUrl: string } | null,
+    profile: { name: string; profileImageUrl: string } | null,
   ): CoursePartnerDto {
     // 프로필은 매칭 조건 생성 시점에 이미 검증되지만, 관계가 끊긴 경우를 대비한 기본값
     return {
-      nickname: profile?.nickname ?? '알 수 없음',
+      name: profile?.name ?? '알 수 없음',
       profileImageUrl: profile?.profileImageUrl ?? '',
     };
   }

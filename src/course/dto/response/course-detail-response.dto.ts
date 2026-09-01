@@ -34,7 +34,7 @@ export class CourseVideoDto {
 
 export class CoursePartnerDto {
   @ApiProperty({ example: '노글리' })
-  nickname: string;
+  name: string;
 
   @ApiProperty({ example: 'https://cdn.haengyeon.kr/profiles/abc.jpg' })
   profileImageUrl: string;

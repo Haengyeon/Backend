@@ -111,7 +111,7 @@ export class ChatRoomService {
             myRemainingCount: MESSAGE_LIMIT_PER_USER - usedCount,
 
             partner: {
-                nickname: partnerProfile.nickname,
+                name: partnerProfile.name,
                 age: ChatRoomService.calcAge(partnerProfile.birthDate),
                 gender: partnerProfile.gender,
                 jobCategory: partnerProfile.jobPrivate

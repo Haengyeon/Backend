@@ -73,7 +73,7 @@ export class MatchAttemptService {
             myDecision: myResponse?.decision ?? null,
 
             partner: {
-                nickname: partnerProfile.nickname,
+                name: partnerProfile.name,
                 age: this.calcAge(partnerProfile.birthDate),
                 gender: partnerProfile.gender,
                 // 비공개로 설정한 경우 직업을 내려주지 않는다
