@@ -116,12 +116,11 @@ model User {
   matchResponses MatchResponse[]
 
   // Payment
-  payments          Payment[]
-  extensionPayments MessageExtensionPayment[]
+  payments Payment[]
 
   // Chat
-  chatMessages ChatMessage[]
-  chatQuotas   ChatMessageQuota[]
+  chatMessages      ChatMessage[]
+  chatMessageCounts ChatMessageCount[]
 
   // Course
   missionPhotos CourseMissionPhoto[]
@@ -419,9 +418,6 @@ model Payment {
 
   amount Int
 
-  // 지역진흥기여금
-  regionContributionAmount Int @default(0)
-
   status PaymentStatus @default(READY)
 
   kakaoPayTid String? @unique
@@ -466,9 +462,8 @@ model ChatRoom {
   matchAttempt MatchAttempt @relation(fields: [matchAttemptId], references: [id])
 
   messages ChatMessage[]
-  quotas   ChatMessageQuota[]
 
-  extensionPayments MessageExtensionPayment[]
+  messageCounts ChatMessageCount[]
 }
 
 // ============================================================
@@ -481,7 +476,7 @@ model ChatMessage {
   senderId   String
 
   // 메시지 글자수 제한
-  content String @db.VarChar(200)
+  content String @db.VarChar(300)
 
   createdAt DateTime @default(now())
 
@@ -492,51 +487,22 @@ model ChatMessage {
 }
 
 // ============================================================
-// CHAT MESSAGE QUOTA
+// CHAT MESSAGE COUNT
 // 사용자별 채팅 사용 가능 횟수 관리
 // ============================================================
 
-model ChatMessageQuota {
+model ChatMessageCount {
   id         String @id @default(uuid())
   chatRoomId String
   userId     String
 
-  freeCountUsed Int @default(0)
-  extendedCount Int @default(0)
+  // 사용자당 30회 제한, 30이 되면 전송 차단
+  usedCount Int @default(0)
 
   chatRoom ChatRoom @relation(fields: [chatRoomId], references: [id])
   user     User     @relation(fields: [userId], references: [id])
 
   @@unique([chatRoomId, userId])
-}
-
-// ============================================================
-// MESSAGE EXTENSION PAYMENT
-// 메시지 횟수 추가 결제
-// ============================================================
-
-model MessageExtensionPayment {
-  id         String @id @default(uuid())
-  chatRoomId String
-  userId     String
-
-  extendedCount Int
-  amount        Int
-
-  status PaymentStatus @default(READY)
-
-  kakaoPayTid String? @unique
-
-  approvedAt  DateTime?
-  cancelledAt DateTime?
-
-  createdAt DateTime @default(now())
-
-  chatRoom ChatRoom @relation(fields: [chatRoomId], references: [id])
-  user     User     @relation(fields: [userId], references: [id])
-
-  @@index([chatRoomId])
-  @@index([userId])
 }
 
 // ============================================================
