@@ -125,6 +125,11 @@ model User {
   // Course
   missionPhotos CourseMissionPhoto[]
   courseReviews CourseReview[]
+  spotReviews   SpotReview[]
+
+  // 상대 후기는 쓴 쪽과 평가받은 쪽 양방향으로 걸린다
+  partnerReviewsWritten  PartnerReview[] @relation("PartnerReviewWriter")
+  partnerReviewsReceived PartnerReview[] @relation("PartnerReviewTarget")
 
   // Report
   reportsMade     Report[] @relation("Reporter")
@@ -359,6 +364,8 @@ model MatchAttempt {
   reports Report[]
   blocks  UserBlock[]
 
+  partnerReviews PartnerReview[]
+
   @@index([matchingAId])
   @@index([matchingBId])
   @@index([status])
@@ -532,6 +539,9 @@ model Course {
   // 전체 예상 여행 시간
   durationMinutes Int?
 
+  // 4곳을 도는 총 이동거리. 알고리즘이 계산한 값을 그대로 저장한다.
+  totalDistanceKm Float?
+
   thumbnailUrl String? @db.VarChar(500)
 
   status CourseStatus @default(UPCOMING)
@@ -544,9 +554,10 @@ model Course {
 
   matchAttempt MatchAttempt @relation(fields: [matchAttemptId], references: [id])
 
-  spots    CourseSpot[]
-  missions CourseMission[]
-  reviews  CourseReview[]
+  spots       CourseSpot[]
+  missions    CourseMission[]
+  reviews     CourseReview[]
+  spotReviews SpotReview[]
 
   video CourseVideo?
 
@@ -575,6 +586,13 @@ model CourseSpot {
   name    String
   address String
 
+  // 코스 구성표가 이 자리에 부여한 역할. "시장 구경", "자연 산책" 등
+  role String?
+
+  // 한글 카테고리. TourAPI 분류코드를 저장 시점에 변환해서 넣는다.
+  // 모르는 코드면 null이고, 화면에서는 카테고리 줄을 숨긴다.
+  category String?
+
   latitude  Float
   longitude Float
 
@@ -592,6 +610,7 @@ model CourseSpot {
   course Course @relation(fields: [courseId], references: [id])
 
   missions CourseMission[]
+  reviews  SpotReview[]
 
   @@unique([courseId, order])
   @@index([contentId])
@@ -672,6 +691,76 @@ model CourseReview {
   user   User   @relation(fields: [userId], references: [id])
 
   @@unique([courseId, userId])
+}
+
+// 관광지 한 곳에 대한 후기.
+//
+// CourseReview가 "그 사람과의 하루"에 대한 사적인 기록이라면,
+// 이쪽은 "이 장소가 어땠는지"에 대한 공개 정보다. 성격이 달라 테이블을 나눴다.
+//
+// contentId(한국관광공사 원본 ID)를 함께 들고 있는 게 핵심이다.
+// CourseSpot 행은 코스마다 새로 생기기 때문에 spotId로만 묶으면 후기가 흩어진다.
+// 같은 장소가 다른 커플의 코스에 다시 나왔을 때 예전 후기를 보여주려면
+// 코스를 가로지르는 키가 있어야 한다.
+model SpotReview {
+  id String @id @default(uuid())
+
+  // 후기가 모이는 기준. 코스를 가로지른다
+  contentId String
+
+  // 어느 코스에서 갔는지 (작성 자격 확인과 맥락용)
+  courseId String
+  spotId   String
+
+  // 목록에는 내보내지 않는다(익명). 중복 작성 방지와 신고 처리에 쓴다
+  userId String
+
+  content String @db.VarChar(300)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course Course     @relation(fields: [courseId], references: [id])
+  spot   CourseSpot @relation(fields: [spotId], references: [id])
+  user   User       @relation(fields: [userId], references: [id])
+
+  // 한 사람이 같은 코스의 같은 장소에 한 번
+  @@unique([spotId, userId])
+  @@index([contentId])
+}
+
+// 함께 다녀온 상대에 대한 후기.
+//
+// CourseReview(코스가 어땠나)·SpotReview(장소가 어땠나)와 달리 대상이 사람이다.
+//
+// revieweeId를 따로 두는 게 핵심이다. courseId로만 묶으면 "이 사람이 지금까지
+// 어떤 평가를 받았나"를 모을 수 없다. 매너 이력이나 제재 판단에 쓰려면
+// 사람을 기준으로 찾을 수 있어야 한다.
+//
+// 공개 범위: 쓴 사람 + 평가받은 사람 + 운영진.
+// 작성되면 상대에게 알림을 보낸다(NotificationLog type=PARTNER_REVIEW).
+model PartnerReview {
+  id String @id @default(uuid())
+
+  // 어느 만남에 대한 후기인지. 코스가 아니라 매칭에 붙인다
+  // (코스가 안 만들어진 매칭에도 쓸 수 있어야 하기 때문)
+  matchAttemptId String
+
+  reviewerId String
+  revieweeId String
+
+  content String @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  matchAttempt MatchAttempt @relation(fields: [matchAttemptId], references: [id])
+  reviewer     User         @relation("PartnerReviewWriter", fields: [reviewerId], references: [id])
+  reviewee     User         @relation("PartnerReviewTarget", fields: [revieweeId], references: [id])
+
+  // 한 만남에 대해 한 사람이 한 번
+  @@unique([matchAttemptId, reviewerId])
+  @@index([revieweeId])
 }
 
 // ============================================================
@@ -807,6 +896,7 @@ model NotificationLog {
   // COURSE_D1
   // COURSE_COMPLETED
   // PAYMENT_FAILED
+  // PARTNER_REVIEW
   type String
 
   // SENT / FAILED
