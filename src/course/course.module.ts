@@ -21,7 +21,7 @@ import { TourApiClient } from './algorithm/tour-api.client';
 //   completion      ← access, reward
 //   photo           ← access, completion
 //   review          ← access, reward
-//   schedule        ← 시계로 도는 것. 아무에게도 안 기댄다
+//   schedule        ← completion. 여행이 끝난 코스를 시계로 닫는다
 //
 // CourseGeneratorService를 내보내는 이유:
 //   양쪽 결제가 끝나 매칭이 확정되면 PaymentService가 이걸 불러 코스를 만든다.

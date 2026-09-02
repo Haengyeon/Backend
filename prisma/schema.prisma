@@ -585,6 +585,25 @@ model CourseSpot {
   name    String
   address String
 
+  // 장소 소개글. TourAPI detailCommon2의 overview를 저장 시점에 받아 태그를 걷어낸 것.
+  // 길이가 수백~수천 자라 VarChar를 두지 않는다. 못 받아온 장소는 null이고
+  // 화면에서는 소개 문단을 통째로 숨긴다.
+  description String?
+
+  // TourAPI가 함께 주는 시군구 코드(sigungucode).
+  // 숫자 자체로는 의미가 없다. 시·도(areaCode) 안에서만 유일해서
+  // 서울(1)의 23은 종로구지만 부산(6)의 23은 다른 구다.
+  // 시·도는 Course.region에 있으니 둘을 같이 봐야 지역이 정해진다.
+  sigunguCode String?
+
+  // 행정구역 표준코드 5자리. TourAPI의 lDongRegnCd + lDongSignguCd를 붙인 값이다.
+  // 서울 중구 = 11140, 부산 해운대구 = 26350.
+  //
+  // 위의 sigunguCode와 따로 두는 이유: 그건 관광공사 자체 번호라 밖에서 안 통한다.
+  // 지도 GeoJSON의 SIG_CD, 통계청 자료 같은 남의 데이터와 맞추려면 이 코드여야 한다.
+  // 스탬프를 지도 위 시군구에 찍을 때 쓰는 것도 이쪽이다.
+  legalSigunguCode String?
+
   // 코스 구성표가 이 자리에 부여한 역할. "시장 구경", "자연 산책" 등
   role String?
 
