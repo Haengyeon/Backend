@@ -20,10 +20,16 @@ import {
 export class CreateMatchingDto {
     @ApiProperty({
         enum: Region,
-        example: Region.SEOUL,
+        isArray: true,
+        example: [Region.SEOUL, Region.GYEONGGI],
+        description: '여행 희망 지역. 최소 1개, 최대 3개',
     })
-    @IsEnum(Region)
-    region: Region;
+    @IsArray()
+    @ArrayMinSize(1)
+    @ArrayMaxSize(3)
+    @ArrayUnique()
+    @IsEnum(Region, { each: true })
+    regions: Region[];
 
     // 미성년자와의 매칭을 원천 차단하기 위해 20세 미만은 선호 나이로 설정 불가
     @ApiProperty({

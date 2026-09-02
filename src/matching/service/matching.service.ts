@@ -48,7 +48,7 @@ export class MatchingService {
     const matching = await this.prisma.matching.create({
       data: {
         userId,
-        region: dto.region,
+        regions: dto.regions,
         ageMin: dto.ageMin,
         ageMax: dto.ageMax,
         preferredGender: dto.preferredGender,
@@ -98,7 +98,7 @@ export class MatchingService {
     await this.prisma.matching.update({
       where: { id: matchingId },
       data: {
-        region: dto.region,
+        regions: dto.regions,
         ageMin: dto.ageMin,
         ageMax: dto.ageMax,
         preferredGender: dto.preferredGender,
