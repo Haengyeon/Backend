@@ -10,6 +10,7 @@ import {PrismaService} from "../../prisma/prisma.service";
 import {KakaoPayClient} from "./kakao-pay.client";
 import {MatchAttemptStatus, MatchingStatus, PaymentStatus} from "../../generated/prisma/enums";
 import { CourseGeneratorService } from '../../course/algorithm/course-generator.service';
+import {ChatRoomService} from "../../chat/service/chat-room.service";
 
 const PAYMENT_AMOUNT = 25_000; //1인당 결제 금액
 const ITEM_NAME = '행연 참가비';
@@ -22,6 +23,7 @@ export class PaymentService {
       private readonly prisma: PrismaService,
       private readonly kakaoPay: KakaoPayClient,
       private readonly courseGenerator: CourseGeneratorService,
+      private readonly chatRoom: ChatRoomService,
   ) {}
 
   //결제준비: 카카오에 tid 발급받고 결제창 url 반환
