@@ -16,6 +16,7 @@ import {
   CourseStatus,
   NotificationChannel,
 } from '../../generated/prisma/enums';
+import { daysUntil } from '../course-date.util';
 import { isUniqueViolation } from '../prisma-error.util';
 import { CreateCourseReviewDto } from '../dto/request/create-course-review.dto';
 import {
@@ -51,8 +52,16 @@ export class CourseReviewService {
   ): Promise<CourseReviewResponseDto> {
     const course = await this.access.loadCourseForUser(courseId, userId);
 
-    if (course.status !== CourseStatus.COMPLETED) {
-      throw new BadRequestException('코스를 완료한 뒤에 후기를 남길 수 있어요');
+    // 완료(여행 다음 날)까지 기다리게 하면 데이트를 마친 그날 밤에 후기를 못 쓴다.
+    // 후기는 보상과 무관해서 완료 상태에 묶을 이유가 없다. 다녀온 날부터 연다.
+    if (daysUntil(course.travelDate) > 0) {
+      throw new BadRequestException('여행 당일부터 후기를 남길 수 있어요');
+    }
+
+    // 완료 상태를 조건에서 뺀 대신 취소는 여기서 따로 막는다.
+    // 안 그러면 취소됐는데 날짜만 지난 코스에 후기가 달린다.
+    if (course.status === CourseStatus.CANCELLED) {
+      throw new BadRequestException('취소된 코스에는 후기를 남길 수 없어요');
     }
 
     const partnerId = this.access.resolvePartnerId(course, userId);

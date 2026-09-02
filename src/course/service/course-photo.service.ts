@@ -1,13 +1,12 @@
 // 인증샷 업로드.
 //
-// 장소마다 두 사람이 한 장씩, 4곳이면 8장. 마지막 한 장이 채워지는 순간
-// 완료 서비스를 불러 코스를 닫는다. 완료가 여기서 시작되는 이유는
-// course-completion.service.ts 머리말에 적어 뒀다.
+// 장소마다 두 사람이 한 장씩, 4곳이면 8장. 다 채웠다고 코스가 끝나지는 않는다.
+// 완료는 여행 다음 날 시계가 처리한다 — course-completion.service.ts 머리말 참고.
+// 여기서는 사진을 저장하고 "몇 곳까지 찍었는지"만 돌려준다.
 import {
   ConflictException,
   ForbiddenException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { unlink } from 'fs/promises';
@@ -23,8 +22,6 @@ import { CourseCompletionService } from './course-completion.service';
 
 @Injectable()
 export class CoursePhotoService {
-  private readonly logger = new Logger(CoursePhotoService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
@@ -36,9 +33,6 @@ export class CoursePhotoService {
    *
    * 파일은 컨트롤러(multer)가 이미 디스크에 저장했고 여기는 그 파일명만 받는다.
    * 사진을 DB에 남기지 못하면 올라간 파일이 주인 없이 남으므로 지워 준다.
-   *
-   * 지우는 건 사진 저장까지다. 사진이 저장된 뒤에 벌어지는 일(코스 완료 처리)이
-   * 실패했다고 파일을 지우면, DB에는 사진 기록이 있는데 파일만 없는 상태가 된다.
    */
   async uploadMissionPhoto(
     userId: string,
@@ -64,6 +58,19 @@ export class CoursePhotoService {
 
     if (daysUntil(course.travelDate) > 0) {
       throw new ForbiddenException('코스 당일부터 인증샷을 올릴 수 있어요');
+    }
+
+    // 완료된 코스에도 계속 받는다.
+    //
+    // 완료는 여행 다음 날 00시에 걸리는데, 데이트를 마치고 집에 가서 올리면
+    // 그 시각을 넘기기 쉽다. 사진은 추억이라 "하루 지났으니 안 됩니다"로
+    // 막을 이유가 약하다.
+    //
+    // 나중에 AI 추억영상이 붙으면 영상의 재료가 고정돼야 하므로 그때
+    // 잠글 자리가 생긴다. 다만 기준은 완료가 아니라 "영상 생성"이어야 한다.
+    // 지금은 영상 기능 자체가 없어서, 없는 제약으로 사용자를 막지 않는다.
+    if (course.status === CourseStatus.CANCELLED) {
+      throw new ForbiddenException('취소된 코스에는 인증샷을 올릴 수 없어요');
     }
 
     const mission = await this.prisma.courseMission.findUnique({
@@ -96,13 +103,6 @@ export class CoursePhotoService {
     const progress = await this.completion.missionProgress(courseId);
     const thisMission = progress.missions.find((m) => m.id === missionId);
 
-    // 마지막 한 장이 채워지면 그 자리에서 코스를 닫는다. 완료를 따로 눌러야
-    // 하면 두 사람이 같이 걸은 코스인데 먼저 누른 쪽만 보상을 받는다.
-    const completed =
-      progress.allRequiredDone && course.status !== CourseStatus.COMPLETED
-        ? await this.tryComplete(courseId, userId, course)
-        : null;
-
     return {
       id: photo.id,
       missionId: photo.missionId,
@@ -115,37 +115,7 @@ export class CoursePhotoService {
         completedMissions: progress.completedCount,
         totalMissions: progress.missions.length,
       },
-      courseCompletable: progress.allRequiredDone,
-      completion: completed,
     };
-  }
-
-  /**
-   * 마지막 인증샷에 딸려 도는 코스 완료 처리.
-   *
-   * 사진은 이미 저장됐으므로 여기서 실패해도 업로드까지 실패시키지 않는다.
-   * 실패하면 completion이 null로 나가고, 코스는 인증샷 8장을 채운 채
-   * 열려 있게 된다. 그때는 POST /courses/:courseId/completions로 다시 닫는다.
-   */
-  private async tryComplete(
-    courseId: string,
-    userId: string,
-    course: Parameters<CourseAccessService['resolvePartnerId']>[0],
-  ) {
-    try {
-      return await this.completion.completeCourse(
-        courseId,
-        userId,
-        this.access.resolvePartnerId(course, userId),
-      );
-    } catch (error) {
-      this.logger.error(
-        `인증샷은 저장됐으나 코스 완료 처리에 실패했습니다. course=${courseId} ` +
-          `— POST /courses/${courseId}/completions로 다시 닫을 수 있습니다`,
-        error as Error,
-      );
-      return null;
-    }
   }
 
   /** 저장에 실패한 업로드 파일을 지운다. 실패해도 원래 에러를 덮지 않는다. */
