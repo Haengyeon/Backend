@@ -210,6 +210,14 @@ export class CourseQueryService {
           { status: { in: ONGOING_STATUSES } },
           // 끝난 코스는 "후기 쓰러 가기" 카드로 하루 동안 남는다.
           // 후기를 쓰거나 다시 매칭하러 가면 할 일을 다 했으므로 그 자리에서 빠진다.
+          //
+          // "후기를 썼다"의 기준은 상대 후기(PartnerReview)다. 그것만 필수라서
+          // 그게 있으면 후기를 쓴 것이다. course.reviews는 코스 한줄평인데
+          // 선택 항목이라, 그걸 보면 상대 후기만 쓰고 한줄평을 건너뛴 사람에게
+          // "후기 쓰러 가기" 카드가 계속 남는다.
+          //
+          // 상대 후기는 코스가 아니라 매칭에 붙어 있어서(코스가 없는 매칭에도
+          // 써야 해서) matchAttempt를 거쳐 본다.
           ...(movedOn
             ? []
             : [
@@ -220,7 +228,9 @@ export class CourseQueryService {
                       Date.now() - COMPLETED_CARD_HOURS * 60 * 60 * 1000,
                     ),
                   },
-                  reviews: { none: { userId } },
+                  matchAttempt: {
+                    partnerReviews: { none: { reviewerId: userId } },
+                  },
                 },
               ]),
         ],
@@ -317,11 +327,20 @@ export class CourseQueryService {
       const photos = course.spots.flatMap((spot) =>
         spot.missions.flatMap((mission) => mission.photos),
       );
+      // 목록 카드에 "서울 중구·종로구"를 적기 위한 것이다. 스팟은 사진을
+      // 세느라 이미 불러와 있어서 질의가 늘지 않는다.
+      //
+      // 지도 색칠에 쓰는 코드(mapSigunguCodes)는 여기서 주지 않는다. 목록은
+      // 페이징이라 한 번에 다 오지 않아서 다녀온 구 전체를 세기에 맞지 않고,
+      // 그건 스탬프 API가 모아서 준다.
+      const visited = this.visitedSigungu(course.spots, course.region);
 
       return {
         id: course.id,
         title: course.title,
         region: course.region,
+        regionLabel: REGION_LABEL[course.region],
+        sigunguNames: visited.names,
         theme: course.theme,
         themeLabel: THEME_LABEL[course.theme],
         travelDate: toDateString(course.travelDate),

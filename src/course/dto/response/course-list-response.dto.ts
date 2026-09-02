@@ -100,6 +100,23 @@ export class CourseHistoryItemDto {
   @ApiProperty({ enum: Region })
   region: Region;
 
+  @ApiProperty({
+    example: '서울',
+    description: '시·도 한글 이름. sigunguNames와 이어 붙여 화면에 쓴다',
+  })
+  regionLabel: string;
+
+  @ApiProperty({
+    type: [String],
+    example: ['중구', '종로구'],
+    description:
+      '다녀온 시군구 이름 전부. regionLabel과 이어 붙이면 "서울 중구·종로구"가 된다',
+  })
+  sigunguNames: string[];
+
+  // 지도 색칠용 코드(mapSigunguCodes)는 여기 없다. 목록은 페이징이라
+  // 다녀온 구 전체를 세기에 맞지 않아서 스탬프 API가 모아서 준다.
+
   @ApiProperty({ enum: CourseTheme })
   theme: CourseTheme;
 

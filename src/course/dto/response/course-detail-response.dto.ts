@@ -212,7 +212,8 @@ export class CourseDetailResponseDto {
 
   @ApiProperty({
     example: '서울',
-    description: '지역 한글 이름. 시군구까지 붙은 배지는 areaLabel을 쓰면 된다',
+    description:
+      '시·도 한글 이름. sigunguNames와 이어 붙이면 "서울 중구·종로구"가 된다',
   })
   regionLabel: string;
 
