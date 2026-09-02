@@ -16,6 +16,9 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CourseStatus } from '../../generated/prisma/enums';
+import { REGION_LABEL } from '../algorithm/labels';
+import { lumpedCellNameOf } from '../algorithm/sigungu-map-code';
+import { sigunguNameOf } from '../algorithm/sigungu-name';
 import { daysUntil } from '../course-date.util';
 import { CourseCompletionResponseDto } from '../dto/response/course-progress-response.dto';
 import { CourseAccessService } from './course-access.service';
@@ -104,6 +107,12 @@ export class CourseCompletionService {
           status: true,
           completedAt: true,
           region: true,
+          // 스탬프는 코스가 지나간 시군구마다 찍힌다. 방문 순서대로 읽는 이유는
+          // 같은 지도 칸에 구가 겹칠 때 먼저 들른 쪽 이름을 남기기 위해서다.
+          spots: {
+            orderBy: { order: 'asc' },
+            select: { sigunguCode: true, legalSigunguCode: true },
+          },
           matchAttempt: {
             select: {
               id: true,
@@ -153,9 +162,18 @@ export class CourseCompletionService {
         id: completed.id,
         status: completed.status,
         completedAt: completed.completedAt,
-        earnedStamp: mine.stamp,
-        earnedPoint: COURSE_COMPLETE_POINT,
-        balanceAfter: mine.balanceAfter,
+        earnedStamps: mine.stamps.map((stamp) => ({
+          region: stamp.region,
+          regionLabel: REGION_LABEL[stamp.region],
+          // 지도가 구를 안 나눠 그린 칸은 칸 이름으로. 목록과 지도가 어긋나지 않게 한다
+          sigunguName:
+            lumpedCellNameOf(stamp.mapSigunguCode) ??
+            sigunguNameOf(stamp.region, stamp.sigunguCode),
+          mapSigunguCode: stamp.mapSigunguCode,
+          earnedAt: stamp.earnedAt,
+        })),
+        earnedPoints: COURSE_COMPLETE_POINT,
+        pointsAfter: mine.pointsAfter,
       };
     });
   }
