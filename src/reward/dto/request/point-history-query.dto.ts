@@ -1,22 +1,23 @@
-// GET /courses/spots/:contentId/reviews 
-// 한 장소의 후기 페이징.
+// GET /rewards/points/history
+// 포인트 변동 내역 페이징.
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  POINT_HISTORY_DEFAULT_LIMIT,
+  POINT_HISTORY_MAX_LIMIT,
+} from '../../service/point.service';
 
-export const SPOT_REVIEW_DEFAULT_LIMIT = 10;
-export const SPOT_REVIEW_MAX_LIMIT = 30;
-
-export class SpotReviewQueryDto {
+export class PointHistoryQueryDto {
   @ApiPropertyOptional({
-    default: SPOT_REVIEW_DEFAULT_LIMIT,
-    maximum: SPOT_REVIEW_MAX_LIMIT,
+    default: POINT_HISTORY_DEFAULT_LIMIT,
+    maximum: POINT_HISTORY_MAX_LIMIT,
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(SPOT_REVIEW_MAX_LIMIT)
+  @Max(POINT_HISTORY_MAX_LIMIT)
   limit?: number;
 
   @ApiPropertyOptional({

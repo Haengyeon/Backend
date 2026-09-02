@@ -21,6 +21,7 @@ function buildService(changedCount = 1) {
         status: CourseStatus.COMPLETED,
         completedAt: new Date(),
         region: 'SEOUL',
+        spots: [{ sigunguCode: '24', legalSigunguCode: '11140' }],
         matchAttempt: {
           matchingA: { id: MATCHING_A },
           matchingB: { id: MATCHING_B },
@@ -37,7 +38,7 @@ function buildService(changedCount = 1) {
   const reward = {
     grantCompletionRewards: jest
       .fn()
-      .mockResolvedValue({ stamp: null, balanceAfter: 1000 }),
+      .mockResolvedValue({ stamps: [], pointsAfter: 1000 }),
   } as unknown as CourseRewardService;
 
   const service = new CourseCompletionService(

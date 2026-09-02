@@ -1,6 +1,16 @@
-// 테마 정해지면 title 이랑 descrption 에 넣어줄 말
-// title : "${REGION_LABEL} ${THEME_LABEL} 코스"
-// description : THEME_DESCRIPTION[theme]
+// 코드값을 화면에 쓸 한글로 바꾸는 표.
+//
+// enum과 분류코드는 화면에 그대로 못 내보내서 여기서 한 번 번역한다.
+// DB에 저장하지 않는 값(실내 여부·복장 팁)도 테마마다 고정이라 여기 둔다.
+//
+//   REGION_LABEL / THEME_LABEL      코스 제목과 배지
+//   THEME_DESCRIPTION               코스 소개 한 줄
+//   THEME_INDOOR / THEME_DRESS_TIP  D-1 예고
+//   categoryLabelOf()               TourAPI 분류코드 -> 한글 카테고리
+//   formatDuration()                390 -> "6시간 30분"
+//   regionFromAddress()             주소 -> Region (전국 조회는 지역 코드가 안 온다)
+//
+// 코스 제목은 `${REGION_LABEL} ${THEME_LABEL} 코스` 형태로 만든다.
 import { CourseTheme, Region } from '../../generated/prisma/enums';
 
 export const REGION_LABEL: Record<Region, string> = {

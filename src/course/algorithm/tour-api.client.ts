@@ -54,9 +54,9 @@ interface RawTourItem {
   title?: string;
   addr1?: string;
   sigungucode?: string;
-  /** 법정동 시·도 코드 (서울 = 11) */
+  /** 행정구역 표준코드의 시·도 부분 (서울 = 11) */
   lDongRegnCd?: string;
-  /** 법정동 시군구 코드 (중구 = 140). 앞의 것과 붙이면 표준 5자리가 된다 */
+  /** 행정구역 표준코드의 시군구 부분 (중구 = 140). 앞의 것과 붙이면 5자리가 된다 */
   lDongSignguCd?: string;
   mapx?: string;
   mapy?: string;
@@ -261,7 +261,7 @@ export class TourApiClient {
   }
 
   /**
-   * 법정동 코드 두 조각을 붙여 행정구역 표준코드 5자리로 만든다.
+   * 두 조각을 붙여 행정구역 표준코드 5자리로 만든다.
    * 시·도 2자리 + 시군구 3자리 (서울 11 + 중구 140 = 11140).
    *
    * 길이가 안 맞으면 붙이지 않고 버린다. 어중간한 코드를 넘기면 지도에서
@@ -274,7 +274,7 @@ export class TourApiClient {
 
     if (sido.length !== 2 || sigungu.length !== 3) {
       this.logger.warn(
-        `법정동 코드 길이가 예상과 다릅니다. contentId=${item.contentid} ` +
+        `행정구역 표준코드 길이가 예상과 다릅니다. contentId=${item.contentid} ` +
           `lDongRegnCd=${sido} lDongSignguCd=${sigungu}`,
       );
       return null;
