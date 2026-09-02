@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
 import {
+    AuthProvider,
     Gender,
     Hobby,
     JobCategory,
@@ -157,13 +158,30 @@ const TEST_USERS = [
 
 async function main() {
     for (const testUser of TEST_USERS) {
+        // isDummy를 켜야 POST /auth/dev-token으로 토큰을 발급받을 수 있다
         await prisma.user.upsert({
             where: {
                 id: testUser.id,
             },
-            update: {},
+            update: {
+                isDummy: true,
+            },
             create: {
                 id: testUser.id,
+                isDummy: true,
+            },
+        });
+
+        // 카카오 계정은 없지만, 토큰 발급 시 refreshTokenHash를 저장할 곳이 필요해서 함께 만든다
+        await prisma.auth.upsert({
+            where: {
+                userId: testUser.id,
+            },
+            update: {},
+            create: {
+                userId: testUser.id,
+                provider: AuthProvider.KAKAO,
+                kakaoId: `dummy-${testUser.id}`,
             },
         });
 
