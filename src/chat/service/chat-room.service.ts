@@ -2,6 +2,7 @@ import {Injectable, Logger, NotFoundException} from "@nestjs/common";
 import {MESSAGE_LIMIT_PER_USER} from "./chat-message.service";
 import {PrismaService} from "../../prisma/prisma.service";
 import {ChatRoomStatus} from "../../generated/prisma/enums";
+import {calcAge} from "../../common/age.util";
 
 type ChatRoomWriter = {
     chatRoom: { create: (args: any) => Promise<any> };
@@ -112,7 +113,7 @@ export class ChatRoomService {
 
             partner: {
                 name: partnerProfile.name,
-                age: ChatRoomService.calcAge(partnerProfile.birthDate),
+                age: calcAge(partnerProfile.birthDate),
                 gender: partnerProfile.gender,
                 jobCategory: partnerProfile.jobPrivate
                     ? null
@@ -141,19 +142,6 @@ export class ChatRoomService {
         const kstMidnightPrevDay = Date.UTC(year, month, day - 1);
 
         return new Date(kstMidnightPrevDay - 9 * 60 * 60 * 1000);
-    }
-
-    static calcAge(birthDate: Date, at: Date = new Date()): number {
-        let age = at.getFullYear() - birthDate.getFullYear();
-
-        const beforeBirthday =
-            at.getMonth() < birthDate.getMonth() ||
-            (at.getMonth() === birthDate.getMonth() &&
-                at.getDate() < birthDate.getDate());
-
-        if (beforeBirthday) age -= 1;
-
-        return age;
     }
 
 }

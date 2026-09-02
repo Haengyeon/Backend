@@ -101,23 +101,6 @@ export class AuthService {
     return { hasProfile: Boolean(user.profile) };
   }
 
-  async withdraw(userId: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: userId },
-        data: {
-          status: UserStatus.WITHDRAWN,
-          deletedAt: new Date(),
-        },
-      });
-
-      await tx.auth.update({
-        where: { userId },
-        data: { refreshTokenHash: null },
-      });
-    });
-  }
-
   private async findOrCreateUser(kakaoUser: KakaoUserInfo): Promise<string> {
     const existing = await this.prisma.auth.findUnique({
       where: {

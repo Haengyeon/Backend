@@ -7,6 +7,7 @@ import {
     PreferredGender,
 } from '../../generated/prisma/enums';
 import type { CourseTheme } from '../../generated/prisma/enums';
+import {calcAge} from "../../common/age.util";
 
 const RESPOND_WINDOW_MS = 12 * 60 * 60 * 1000; // 12시간 이내 미응답 시 취소
 
@@ -60,7 +61,7 @@ export class MatchingEngineService {
         if (!matching || matching.status !== MatchingStatus.SEARCHING) return null;
         if (!matching.user.profile) return null; // 생성 시점에 이미 검증되므로 이론상 도달 불가(방어코드)
 
-        const myAge = this.calcAge(matching.user.profile.birthDate);
+        const myAge = calcAge(matching.user.profile.birthDate);
         const myDates = new Set(
             matching.availableDates.map((d) => d.date.toISOString().slice(0, 10)),
         );
@@ -177,7 +178,7 @@ export class MatchingEngineService {
         // (DTO에서 ageMin >= 20을 강제하지만, 버퍼를 그대로 빼면 last-resort 단계에서
         //  20 - 5 = 15세까지 후보로 잡힐 수 있어서 별도로 막아둔 것)
         const MIN_ALLOWED_AGE = 20;
-        const candidateAge = this.calcAge(candidate.user.profile.birthDate);
+        const candidateAge = calcAge(candidate.user.profile.birthDate);
         const iFitTheirRange =
             myAge >= Math.max(MIN_ALLOWED_AGE, candidate.ageMin - stage.ageBufferYears) &&
             myAge <= candidate.ageMax + stage.ageBufferYears;
@@ -304,12 +305,4 @@ export class MatchingEngineService {
         return shared ?? matching.themes[0];
     }
 
-    private calcAge(birthDate: Date, at: Date = new Date()): number {
-        let age = at.getFullYear() - birthDate.getFullYear();
-        const beforeBirthday =
-            at.getMonth() < birthDate.getMonth() ||
-            (at.getMonth() === birthDate.getMonth() && at.getDate() < birthDate.getDate());
-        if (beforeBirthday) age -= 1;
-        return age;
-    }
 }
