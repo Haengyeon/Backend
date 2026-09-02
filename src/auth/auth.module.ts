@@ -1,9 +1,20 @@
-import { Module } from '@nestjs/common';
-import { AuthService } from './auth.service';
-import { AuthController } from './auth.controller';
+import { Global, Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 
+import { AuthController } from './controller/auth.controller';
+import { AuthService } from './service/auth.service';
+import { KakaoClient } from './service/kakao.client';
+
+@Global()
 @Module({
+  imports: [
+    JwtModule.register({
+      global: true,
+      secret: process.env.JWT_SECRET,
+    }),
+  ],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [AuthService, KakaoClient],
+  exports: [JwtModule],
 })
 export class AuthModule {}

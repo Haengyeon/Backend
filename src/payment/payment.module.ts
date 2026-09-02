@@ -9,7 +9,7 @@ import {ChatModule} from "../chat/chat.module";
 // 결제가 확정되면 코스를 만들어야 해서 CourseModule을 가져온다.
 // CourseModule은 결제를 참조하지 않아서 순환은 없다.
 @Module({
-  imports: [ChatModule, CourseModule],
+  imports: [ChatModule,CourseModule],
   controllers: [PaymentController],
   providers: [PaymentService, KakaoPayClient],
 })

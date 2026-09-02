@@ -24,7 +24,7 @@ export class PaymentService {
       private readonly kakaoPay: KakaoPayClient,
       private readonly courseGenerator: CourseGeneratorService,
       private readonly chatRoom: ChatRoomService,
-  ) {}
+) {}
 
   //결제준비: 카카오에 tid 발급받고 결제창 url 반환
   async ready(userId: string,  matchAttemptId: string) {
