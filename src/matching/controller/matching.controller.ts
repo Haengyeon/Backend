@@ -1,17 +1,15 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
-  Headers,
   Param,
   Patch,
   Post,
 } from '@nestjs/common';
 
 import {
+  ApiBearerAuth,
   ApiCreatedResponse,
-  ApiHeader,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -24,8 +22,10 @@ import { CreateMatchingDto } from '../dto/request/create-matching.dto';
 import { UpdateMatchingDto } from '../dto/request/update-matching.dto';
 import { MatchingResponseDto } from '../dto/response/matching-response.dto';
 import { MatchingService } from '../service/matching.service';
+import { CurrentUser } from '../../auth/current-user.decorator';
 
 @ApiTags('Matching')
+@ApiBearerAuth()
 @Controller('matchings')
 export class MatchingController {
   constructor(private readonly matchingService: MatchingService) {}
@@ -39,20 +39,9 @@ export class MatchingController {
   @ApiOkResponse({
     type: MatchingResponseDto,
   })
-  @ApiHeader({
-    name: 'x-test-user-id',
-    description: '개발용 테스트 사용자 ID',
-    required: true,
-  })
   async findMyActive(
-      @Headers('x-test-user-id') userId: string,
+      @CurrentUser() userId: string,
   ): Promise<MatchingResponseDto> {
-    if (!userId) {
-      throw new BadRequestException(
-          'x-test-user-id 헤더가 필요합니다.',
-      );
-    }
-
     const matching = await this.matchingService.findMyActive(userId);
 
     return plainToInstance(
@@ -71,21 +60,10 @@ export class MatchingController {
   @ApiCreatedResponse({
     type: MatchingResponseDto,
   })
-  @ApiHeader({
-    name: 'x-test-user-id',
-    description: '개발용 테스트 사용자 ID',
-    required: true,
-  })
   async create(
-      @Headers('x-test-user-id') userId: string,
+      @CurrentUser() userId: string,
       @Body() createMatchingDto: CreateMatchingDto,
   ): Promise<MatchingResponseDto> {
-    if (!userId) {
-      throw new BadRequestException(
-          'x-test-user-id 헤더가 필요합니다.',
-      );
-    }
-
     const matching = await this.matchingService.create(
         userId,
         createMatchingDto,
@@ -111,22 +89,11 @@ export class MatchingController {
     name: 'matchingId',
     description: 'Matching ID — MatchAttempt.id나 userId가 아님',
   })
-  @ApiHeader({
-    name: 'x-test-user-id',
-    description: '개발용 테스트 사용자 ID',
-    required: true,
-  })
   async update(
-      @Headers('x-test-user-id') userId: string,
+      @CurrentUser() userId: string,
       @Param('matchingId') matchingId: string,
       @Body() updateMatchingDto: UpdateMatchingDto,
   ): Promise<MatchingResponseDto> {
-    if (!userId) {
-      throw new BadRequestException(
-          'x-test-user-id 헤더가 필요합니다.',
-      );
-    }
-
     const matching = await this.matchingService.update(
         userId,
         matchingId,
@@ -153,21 +120,10 @@ export class MatchingController {
     name: 'matchingId',
     description: 'Matching ID — MatchAttempt.id나 userId가 아님',
   })
-  @ApiHeader({
-    name: 'x-test-user-id',
-    description: '개발용 테스트 사용자 ID',
-    required: true,
-  })
   async retry(
-      @Headers('x-test-user-id') userId: string,
+      @CurrentUser() userId: string,
       @Param('matchingId') matchingId: string,
   ): Promise<MatchingResponseDto> {
-    if (!userId) {
-      throw new BadRequestException(
-          'x-test-user-id 헤더가 필요합니다.',
-      );
-    }
-
     const matching = await this.matchingService.retry(userId, matchingId);
 
     return plainToInstance(
