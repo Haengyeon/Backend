@@ -14,9 +14,9 @@ export class MatchingResponseDto {
     @Expose()
     id: string;
 
-    @ApiProperty({ enum: Region })
+    @ApiProperty({ enum: Region, isArray: true })
     @Expose()
-    region: Region;
+    regions: Region[];
 
     @ApiProperty({ example: 20 })
     @Expose()

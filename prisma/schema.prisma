@@ -266,7 +266,7 @@ model Matching {
   userId String
 
   // 여행 희망 지역
-  region Region
+  regions Region[]
 
   // 선호 상대 나이
   ageMin Int

@@ -2,11 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+    CourseTheme,
+    Hobby,
     MatchDecision,
     MatchingStatus,
     PreferredGender,
 } from '../../generated/prisma/enums';
-import type { CourseTheme } from '../../generated/prisma/enums';
+import type { Region } from '../../generated/prisma/enums';
 import {calcAge} from "../../common/age.util";
 
 const RESPOND_WINDOW_MS = 12 * 60 * 60 * 1000; // 12시간 이내 미응답 시 취소
@@ -17,7 +19,7 @@ const REJECTION_COOLDOWN_DAYS = 30;
 
 // 조건 완화 단계: 위에서부터 순서대로 시도하고, 후보가 1명이라도 나오면 그 단계에서 멈춘다.
 // 항상 필수(완화 대상 아님):
-//   - region 완전 일치
+//   - regions 최소 1개 겹침
 //   - availableDates 겹침 최소 1일
 //   - preferredGender 상호조건
 // 아래 수치는 초기 추정치 — 실제 매칭 성사율 보면서 튜닝 필요.
@@ -31,6 +33,36 @@ const RELAX_STAGES = [
     // 3단계: 최후 수단 — 나이 범위 크게 완화
     { label: 'last-resort', minThemeOverlap: 0, requireHobbyOverlap: false, ageBufferYears: 5 },
 ] as const;
+
+// 테마가 하나도 겹치지 않을 때, 겹치는 취향(hobbies)으로 코스 테마를 정한다.
+// 취향도 안 겹치면 DEFAULT_THEME으로 떨어진다.
+const HOBBY_TO_THEME: Record<Hobby, CourseTheme> = {
+    [Hobby.PHOTO]: CourseTheme.PHOTO_SPOT,
+
+    [Hobby.FOOD]: CourseTheme.LOCAL_FOOD_MARKET,
+    [Hobby.COOKING]: CourseTheme.LOCAL_FOOD_MARKET,
+
+    [Hobby.ART]: CourseTheme.ART_SENSIBILITY,
+    [Hobby.EXHIBITION]: CourseTheme.ART_SENSIBILITY,
+
+    [Hobby.HISTORY]: CourseTheme.HISTORY_CULTURE,
+    [Hobby.READING]: CourseTheme.HISTORY_CULTURE,
+
+    [Hobby.ACTIVITY]: CourseTheme.ACTIVITY,
+    [Hobby.EXERCISE]: CourseTheme.ACTIVITY,
+    [Hobby.SEA]: CourseTheme.ACTIVITY,
+
+    [Hobby.CAFE]: CourseTheme.NIGHT_DATE,
+    [Hobby.MOVIE]: CourseTheme.NIGHT_DATE,
+    [Hobby.MUSIC]: CourseTheme.NIGHT_DATE,
+
+    [Hobby.ANIMAL]: CourseTheme.WALKING_TRIP,
+    [Hobby.IT]: CourseTheme.WALKING_TRIP,
+};
+
+// 테마도 취향도 겹치지 않는 경우(relax-age, last-resort 단계)에 쓰는 기본 테마.
+// 호불호가 적은 쪽으로 고른다.
+const DEFAULT_THEME: CourseTheme = CourseTheme.LOCAL_FOOD_MARKET;
 
 const matchingInclude = {
     availableDates: true,
@@ -77,7 +109,8 @@ export class MatchingEngineService {
                     userId: { notIn: [matching.userId, ...excludedUserIds] },
                     status: MatchingStatus.SEARCHING,
                     endedAt: null,
-                    region: matching.region, // 도 단위 완전 일치 (항상 필수)
+                    // 지역은 여러 개 고를 수 있으므로 하나라도 겹치면 후보로 본다 (항상 필수)
+                    regions: { hasSome: matching.regions },
                 },
                 include: matchingInclude,
             });
@@ -265,7 +298,7 @@ export class MatchingEngineService {
                     data: {
                         matchingAId: matching.id,
                         matchingBId: candidate.id,
-                        region: matching.region,
+                        region: this.pickSharedRegion(matching, candidate),
                         theme: this.pickSharedTheme(matching, candidate),
                         travelDate: this.pickSharedDate(matching, candidate),
                         respondDeadlineAt: new Date(Date.now() + RESPOND_WINDOW_MS),
@@ -297,12 +330,45 @@ export class MatchingEngineService {
     }
 
     // 겹치는 테마 중 하나 선택, 겹침이 없으면(취향 기반으로 매칭된 경우) 내 첫 테마로 대체
+    /**
+     * 겹치는 지역 중 하나를 여행 지역으로 확정한다.
+     *
+     * 후보 풀에서 이미 hasSome으로 걸렀으므로 겹치는 지역은 반드시 존재한다.
+     * 여러 개 겹치면 앞에 있는 것을 쓴다.
+     */
+    private pickSharedRegion(
+        matching: MatchingWithRelations,
+        candidate: MatchingWithRelations,
+    ): Region {
+        const shared = matching.regions.find((r) => candidate.regions.includes(r));
+
+        return shared ?? matching.regions[0];
+    }
+
+    /**
+     * 코스 테마를 확정한다.
+     *
+     * 1) 두 사람이 함께 고른 테마가 있으면 그것
+     * 2) 없으면 겹치는 취향(hobbies)을 테마로 환산해서 사용
+     * 3) 그것도 없으면 기본 테마
+     */
     private pickSharedTheme(
         matching: MatchingWithRelations,
         candidate: MatchingWithRelations,
     ): CourseTheme {
-        const shared = matching.themes.find((t) => candidate.themes.includes(t));
-        return shared ?? matching.themes[0];
+        const sharedTheme = matching.themes.find((t) =>
+            candidate.themes.includes(t),
+        );
+
+        if (sharedTheme) return sharedTheme;
+
+        const sharedHobby = matching.user.profile?.hobbies.find((h) =>
+            candidate.user.profile?.hobbies.includes(h),
+        );
+
+        if (sharedHobby) return HOBBY_TO_THEME[sharedHobby];
+
+        return DEFAULT_THEME;
     }
 
 }
