@@ -105,6 +105,8 @@ enum Hobby {
 model User {
   id        String     @id @default(uuid())
   status    UserStatus @default(ACTIVE)
+  //개발데모용 계정, 카카오 로그인 없이 접근
+  isDummy   Boolean    @default(false)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   deletedAt DateTime?

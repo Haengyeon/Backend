@@ -101,6 +101,39 @@ export class AuthService {
     return { hasProfile: Boolean(user.profile) };
   }
 
+  /**
+   * 개발·데모용 토큰 발급.
+   * 시드로 넣은 더미 계정은 카카오 계정이 없어 토큰막힘
+   * 매칭은 서로 다른 두 사용자가 주고받는 기능이라 계정별 토큰이 필요해서 열어둠.
+   * isDummy 검사는 반드시 있어야 한다. 없으면 배포 후 임의의 userId를 넣어
+   * 실제 사용자의 토큰을 발급받을 수 있다.
+   */
+  async issueDevToken(userId: string): Promise<TokenPair> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { isDummy: true, auth: { select: { id: true } } },
+    });
+
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    if (!user.isDummy) {
+      throw new ForbiddenException(
+          '더미 계정에만 발급할 수 있습니다. 실제 계정은 카카오 로그인을 이용해 주세요.',
+      );
+    }
+
+    // issueTokens가 Auth에 refreshTokenHash를 저장하므로 Auth 레코드가 반드시 있어야 함
+    if (!user.auth) {
+      throw new NotFoundException(
+          '더미 계정에 인증 정보가 없습니다. 시드를 다시 실행해 주세요.',
+      );
+    }
+
+    return this.issueTokens(userId);
+  }
+
   private async findOrCreateUser(kakaoUser: KakaoUserInfo): Promise<string> {
     const existing = await this.prisma.auth.findUnique({
       where: {
