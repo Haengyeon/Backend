@@ -109,8 +109,7 @@ export class CourseRecommendService {
       .filter((row) => row.score > 0)
       .sort((a, b) => b.score - a.score);
 
-    // 연관도가 0인 취미만 가진 사람이 있다. (READING·IT·ANIMAL·MUSIC)
-    // 그때는 고를 근거가 없으니 전체 테마를 본다.
+    // 취미를 하나도 안 고른 사람이 있다. 그때는 고를 근거가 없으니 전체 테마를 본다.
     if (scored.length === 0) return [...THEME_ORDER];
 
     return scored.slice(0, THEMES_FROM_HOBBIES).map((row) => row.theme);

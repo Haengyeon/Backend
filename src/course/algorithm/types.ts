@@ -7,6 +7,10 @@ export interface TourSpot {
   contentTypeId: string;
   title: string;
   address: string;
+  /** 시군구 코드. 시·도(areaCode) 안에서만 유일하다. 안 주는 항목은 null */
+  sigunguCode: string | null;
+  /** 행정구역 표준코드 5자리(서울 중구 = 11140). 지도·통계 데이터와 맞출 때 쓴다 */
+  legalSigunguCode: string | null;
   latitude: number;
   longitude: number;
   firstImage: string | null;

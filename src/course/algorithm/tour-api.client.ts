@@ -11,12 +11,53 @@ const NUM_OF_ROWS = 200;
 
 const TIMEOUT_MS = 5000;
 
+/** 흔히 섞여 오는 HTML 엔티티. 나머지는 그대로 둔다 */
+const HTML_ENTITIES: Record<string, string> = {
+  '&nbsp;': ' ',
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+};
+
+/**
+ * 소개글을 화면에 그대로 쓸 수 있는 평문으로 만든다.
+ *
+ * overview는 대체로 평문이지만 <br>이나 <b>가 섞여 오는 항목이 있다.
+ * 화면에서 HTML로 그리지 않으므로 태그가 그대로 보이게 된다. 줄바꿈 태그는
+ * 줄바꿈으로 살리고 나머지 태그는 지운다.
+ */
+function toPlainText(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+
+  const text = value
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(
+      /&nbsp;|&amp;|&lt;|&gt;|&quot;|&#39;/g,
+      (entity) => HTML_ENTITIES[entity] ?? entity,
+    )
+    // 태그를 지우면서 생긴 빈 줄과 줄 끝 공백을 정리한다
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n+ */g, '\n')
+    .trim();
+
+  return text.length > 0 ? text : null;
+}
+
 /** TourAPI 원본 응답 1건. 필드명이 전부 소문자인 것에 주의. */
 interface RawTourItem {
   contentid?: string;
   contenttypeid?: string;
   title?: string;
   addr1?: string;
+  sigungucode?: string;
+  /** 법정동 시·도 코드 (서울 = 11) */
+  lDongRegnCd?: string;
+  /** 법정동 시군구 코드 (중구 = 140). 앞의 것과 붙이면 표준 5자리가 된다 */
+  lDongSignguCd?: string;
   mapx?: string;
   mapy?: string;
   firstimage?: string;
@@ -76,6 +117,61 @@ export class TourApiClient {
     }
 
     return [...byContentId.values()];
+  }
+
+  /**
+   * 장소 소개글(overview)을 contentId별로 받아온다.
+   *
+   * 목록 조회(areaBasedList2)에는 없는 필드라 detailCommon2를 한 번 더 부른다.
+   * 코스 하나에 4곳뿐이라 병렬로 던지고, 한 곳이 실패해도 코스는 만들어져야 하므로
+   * 못 받은 장소는 지도에서 빠지듯 그냥 빠진다(Map에 안 담김).
+   */
+  async fetchOverviews(contentIds: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(contentIds)];
+
+    const entries = await Promise.all(
+      unique.map(async (contentId) => {
+        const overview = await this.fetchOverview(contentId);
+        return overview ? ([contentId, overview] as const) : null;
+      }),
+    );
+
+    return new Map(entries.filter((entry) => entry !== null));
+  }
+
+  private async fetchOverview(contentId: string): Promise<string | null> {
+    const params = new URLSearchParams({
+      MobileOS: 'ETC',
+      MobileApp: 'Haengyeon',
+      _type: 'json',
+      contentId,
+    });
+
+    const url = `${BASE_URL}/detailCommon2?serviceKey=${this.encodedServiceKey}&${params}`;
+
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        this.logger.warn(
+          `TourAPI 소개글 응답 실패 (${response.status}) contentId=${contentId}`,
+        );
+        return null;
+      }
+
+      const body = await response.json();
+      const raw = body?.response?.body?.items?.item;
+      const item = Array.isArray(raw) ? raw[0] : raw;
+
+      return toPlainText(item?.overview);
+    } catch (error) {
+      // 소개글은 없어도 코스가 성립한다. 하나 실패했다고 생성을 막지 않는다
+      this.logger.warn(
+        `TourAPI 소개글 호출 실패 contentId=${contentId}: ${error}`,
+      );
+      return null;
+    }
   }
 
   private async fetchOne(
@@ -152,6 +248,9 @@ export class TourApiClient {
       contentTypeId: item.contenttypeid ?? '',
       title: item.title ?? '',
       address: item.addr1 ?? '',
+      // 시·도(areaCode) 안에서만 유일한 코드다. 안 주는 항목도 있어 null을 허용한다
+      sigunguCode: item.sigungucode || null,
+      legalSigunguCode: this.toLegalSigunguCode(item),
       latitude,
       longitude,
       firstImage: item.firstimage || null,
@@ -159,5 +258,28 @@ export class TourApiClient {
       lclsSystm2: item.lclsSystm2 || null,
       lclsSystm3: item.lclsSystm3 || null,
     };
+  }
+
+  /**
+   * 법정동 코드 두 조각을 붙여 행정구역 표준코드 5자리로 만든다.
+   * 시·도 2자리 + 시군구 3자리 (서울 11 + 중구 140 = 11140).
+   *
+   * 길이가 안 맞으면 붙이지 않고 버린다. 어중간한 코드를 넘기면 지도에서
+   * 엉뚱한 구에 스탬프가 찍히는데, 그건 값이 없는 것보다 나쁘다.
+   */
+  private toLegalSigunguCode(item: RawTourItem): string | null {
+    const sido = item.lDongRegnCd;
+    const sigungu = item.lDongSignguCd;
+    if (!sido || !sigungu) return null;
+
+    if (sido.length !== 2 || sigungu.length !== 3) {
+      this.logger.warn(
+        `법정동 코드 길이가 예상과 다릅니다. contentId=${item.contentid} ` +
+          `lDongRegnCd=${sido} lDongSignguCd=${sigungu}`,
+      );
+      return null;
+    }
+
+    return `${sido}${sigungu}`;
   }
 }

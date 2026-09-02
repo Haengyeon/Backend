@@ -154,6 +154,12 @@ export class CourseGeneratorService {
     const regionLabel = REGION_LABEL[plan.region];
     const themeLabel = THEME_LABEL[plan.theme];
 
+    // 소개글은 목록 조회에 없어서 장소 4곳만 따로 받아온다.
+    // 트랜잭션 밖에서 부른다 — 남의 서버를 기다리는 동안 DB 커넥션을 붙잡지 않는다.
+    const overviews = await this.tourApi.fetchOverviews(
+      plan.spots.map((planned) => planned.spot.contentId),
+    );
+
     return this.prisma.$transaction(async (tx) => {
       // 재선정된 테마를 매칭 쪽에도 반영해 둘이 어긋나지 않게 한다
       await tx.matchAttempt.update({
@@ -183,6 +189,9 @@ export class CourseGeneratorService {
             contentId: planned.spot.contentId,
             name: planned.spot.title,
             address: planned.spot.address,
+            description: overviews.get(planned.spot.contentId) ?? null,
+            sigunguCode: planned.spot.sigunguCode,
+            legalSigunguCode: planned.spot.legalSigunguCode,
             role: planned.role,
             category: categoryLabelOf(
               planned.spot.lclsSystm1,

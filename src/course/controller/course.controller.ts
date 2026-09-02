@@ -188,8 +188,8 @@ export class CourseController {
     description:
       '사진 파일을 직접 올린다. 사용자 한 명이 같은 미션에 한 장만 올릴 수 있다. ' +
       '저장된 사진은 응답의 imageUrl로 다시 열 수 있다. ' +
-      '이 업로드로 필수 미션이 전부 차면 코스가 그 자리에서 완료되고, ' +
-      '스탬프와 포인트가 두 사람에게 지급되며 결과가 completion에 실려 온다.',
+      '사진을 다 채워도 코스는 끝나지 않는다. 완료는 여행 다음 날 서버가 처리하고 ' +
+      '그때 스탬프와 포인트가 두 사람에게 지급된다.',
   })
   @ApiParam({ name: 'courseId' })
   @ApiParam({ name: 'missionId' })
@@ -237,8 +237,9 @@ export class CourseController {
   @ApiOperation({
     summary: '코스 완료 처리 (예비)',
     description:
-      '보통은 마지막 인증샷이 올라올 때 자동으로 완료되므로 부를 일이 없다. ' +
-      '자동 처리가 실패해 코스가 열린 채 남았을 때 쓰는 예비 경로다.',
+      '코스는 여행 다음 날 서버가 자동으로 완료하므로 보통은 부를 일이 없다. ' +
+      '자동 처리가 실패해 코스가 열린 채 남았을 때 쓰는 예비 경로다. ' +
+      '조건은 같아서 여행일이 지나야 하고, 당일에 부르면 400이다.',
   })
   @ApiParam({ name: 'courseId' })
   complete(
