@@ -103,19 +103,6 @@ export class AuthController {
     return { success: true };
   }
 
-  @ApiBearerAuth()
-  @Delete('withdraw')
-  @ApiOperation({ summary: '회원 탈퇴' })
-  async withdraw(
-      @CurrentUser() userId: string,
-      @Res({ passthrough: true }) res: Response,
-  ): Promise<{ success: boolean }> {
-    await this.authService.withdraw(userId);
-    res.clearCookie(REFRESH_COOKIE_NAME, { path: '/' });
-
-    return { success: true };
-  }
-
   private setRefreshCookie(res: Response, refreshToken: string) {
     const isProduction = process.env.NODE_ENV === 'production';
 

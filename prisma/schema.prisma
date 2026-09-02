@@ -44,6 +44,7 @@ enum UserStatus {
 enum Gender {
   MALE
   FEMALE
+  OTHER
 }
 
 enum Mbti {
@@ -167,7 +168,7 @@ model Profile {
   mbti   Mbti?
 
   // 한줄소개
-  introduce String @db.VarChar(100)
+  introduce String @db.VarChar(200)
 
   jobCategory JobCategory
   jobPrivate  Boolean     @default(false)

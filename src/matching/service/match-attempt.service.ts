@@ -16,6 +16,7 @@ import {
 import { MatchAttemptDto } from '../dto/request/match-attempt.dto';
 import { MatchingEngineService } from './matching-engine.service';
 import { MatchingPenaltyService } from './matching-penalty.service';
+import {calcAge} from "../../common/age.util";
 
 const PAYMENT_WINDOW_MS = 6 * 60 * 60 * 1000; // 결제 유예 6시간
 
@@ -74,7 +75,7 @@ export class MatchAttemptService {
 
             partner: {
                 name: partnerProfile.name,
-                age: this.calcAge(partnerProfile.birthDate),
+                age: calcAge(partnerProfile.birthDate),
                 gender: partnerProfile.gender,
                 // 비공개로 설정한 경우 직업을 내려주지 않는다
                 jobCategory: partnerProfile.jobPrivate
@@ -86,19 +87,6 @@ export class MatchAttemptService {
                 fullBodyImageUrl: partnerProfile.fullBodyImageUrl,
             },
         };
-    }
-
-    private calcAge(birthDate: Date, at: Date = new Date()): number {
-        let age = at.getFullYear() - birthDate.getFullYear();
-
-        const beforeBirthday =
-            at.getMonth() < birthDate.getMonth() ||
-            (at.getMonth() === birthDate.getMonth() &&
-                at.getDate() < birthDate.getDate());
-
-        if (beforeBirthday) age -= 1;
-
-        return age;
     }
 
 
