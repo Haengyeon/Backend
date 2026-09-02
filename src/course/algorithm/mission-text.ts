@@ -21,10 +21,6 @@ function hasFinalConsonant(word: string): boolean {
   return (code - HANGUL_START) % 28 !== 0;
 }
 
-/**
- * 장소 이름 뒤에 붙일 목적격 조사.
- * 이름이 데이터에서 오기 때문에 '~플라자을'처럼 어색해지는 걸 막는다.
- */
 function objectParticle(word: string): string {
   return hasFinalConsonant(word) ? '을' : '를';
 }

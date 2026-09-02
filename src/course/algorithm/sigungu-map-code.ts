@@ -1,7 +1,11 @@
-// 법정동 코드(TourAPI) : 지도 코드(southkorea-maps kostat/2018)
+// 행정구역 표준코드 : 지도 코드(southkorea-maps kostat/2018)
 //
-// TourAPI 코드를 그대로 내려주면 지도가 엉뚱한 구에 스탬프를 찍는다.
-// 자릿수가 같아 에러도 안 나니까 여기서 바꿔서 준다.
+// 왼쪽은 정부 행정구역 표준코드 5자리다.
+// TourAPI가 시·도 2자리(lDongRegnCd)와 시군구 3자리(lDongSignguCd)로 나눠 주는 것을 붙여서 쓴다.
+// TourAPI 자체 번호(sigunguCode, 서울 종로구 = '23')와는 다르니 섞지 말 것.
+//
+// 오른쪽은 프론트가 쓰는 지도 파일의 SIG_CD다.
+// 둘 다 5자리라 그냥 넘겨도 에러가 안 나지만 대신 엉뚱한 구가 칠해진다.
 // (2026-09-01 기준 283개)
 
 export const MAP_SIGUNGU_CODE: Record<string, string> = {
@@ -369,7 +373,7 @@ export function lumpedCellNameOf(mapSigunguCode: string): string | null {
 /**
  * 지도에 있는 칸 수. 스탬프 수집 진행률의 분모다.
  *
- * 표의 항목 수(283)가 아니라 결과값의 가짓수를 센다. 법정동 코드 여럿이 한 칸으로
+ * 표의 항목 수(283)가 아니라 결과값의 가짓수를 센다. 행정구역 표준코드 여럿이 한 칸으로
  * 접히기 때문이다 — 부천시 원미·소사·오정구는 지도에 부천시 하나로 그려져 있다.
  * 표를 고치면 이 값도 따라 움직인다.
  */

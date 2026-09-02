@@ -1,3 +1,5 @@
+// POST /courses/:courseId/reviews
+// 상대·코스·장소 후기를 한 번에 보낸다.
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {

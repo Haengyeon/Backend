@@ -1,3 +1,5 @@
+// GET /rewards/points/history
+// 포인트 변동 내역 페이징.
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';

@@ -1,3 +1,4 @@
+// 홈 화면 매칭 페이지에 보여줄 api의 service 코드
 // 저장된 코스를 읽어서 화면에 맞게 잘라 주는 서비스
 //
 // 알고리즘을 다시 돌리지 않는다. 코스는 결제 완료 시점에 CourseGeneratorService가
@@ -527,7 +528,7 @@ export class CourseQueryService {
       address: spot.address,
       // 내보내는 건 이름과 표준코드뿐. 이름은 이 코드로 만든다
       sigunguName: sigunguNameOf(region, spot.sigunguCode),
-      // 법정동 코드는 지도 파일과 체계가 달라 그대로 내보내지 않는다.
+      // 행정구역 표준코드는 지도 파일과 체계가 달라 그대로 내보내지 않는다.
       // DB에는 남아 있으니 지도를 바꾸면 표만 다시 만들면 된다
       mapSigunguCode: mapSigunguCodeOf(spot.legalSigunguCode),
       latitude: spot.latitude,

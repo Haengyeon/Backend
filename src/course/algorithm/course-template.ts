@@ -1,4 +1,6 @@
-// 테마 코스 구성표 - 기획 바뀌면 여기만 수정하면 됨
+// 테마별 코스 구성표. 스팟 4개를 구성표. 하루를 어떤 장소로 어떤 순서로 채울지 정한다.
+// 테마 코스 구성 바꾸고 싶으면 여기서 변경하면 됨.
+// 자리마다 넣을 장소 종류는 TourAPI 분류코드로 적는다(아래 요약 참고).
 import { CourseTheme } from '../../generated/prisma/enums';
 import { CONTENT_TYPE_TOURIST_SPOT } from './tour-category';
 import { SlotSpec, SpotFilter } from './types';

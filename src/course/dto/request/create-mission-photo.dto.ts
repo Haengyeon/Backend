@@ -1,3 +1,5 @@
+// POST /courses/:courseId/missions/:missionId/photos 
+// 인증샷에 붙는 한 줄.
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 

@@ -1,4 +1,4 @@
-// 법정동 코드와 지도 코드는 자릿수가 같고 뜻이 달라서, 표가 틀리면
+// 행정구역 표준코드와 지도 코드는 자릿수가 같고 뜻이 달라서, 표가 틀리면
 // 에러 없이 엉뚱한 구가 칠해진다. 그래서 몇 개는 값을 박아 두고 지킨다.
 import {
   MAP_SIGUNGU_CODE,
@@ -8,14 +8,14 @@ import {
 } from './sigungu-map-code';
 
 describe('mapSigunguCodeOf', () => {
-  it('법정동 코드를 지도 코드로 바꾼다', () => {
+  it('행정구역 표준코드를 지도 코드로 바꾼다', () => {
     expect(mapSigunguCodeOf('11110')).toBe('11010'); // 서울 종로구
     expect(mapSigunguCodeOf('11140')).toBe('11020'); // 서울 중구
     expect(mapSigunguCodeOf('26350')).toBe('21090'); // 부산 해운대구
     expect(mapSigunguCodeOf('50110')).toBe('39010'); // 제주시
   });
 
-  it('법정동 코드를 그대로 흘려보내지 않는다', () => {
+  it('행정구역 표준코드를 그대로 흘려보내지 않는다', () => {
     // 지도에서 11110은 노원구라 그대로 넘기면 엉뚱한 구가 칠해진다
     expect(mapSigunguCodeOf('11110')).not.toBe('11110');
   });
@@ -37,8 +37,6 @@ describe('mapSigunguCodeOf', () => {
   });
 
   it('금산군과 영동군은 서로 다른 칸이다', () => {
-    // 44710(충남 금산군)이 33340(충북 영동군)으로 잘못 걸려 있었다.
-    // 금산군을 다녀오면 영동군이 칠해지고, 정작 금산군 칸은 아무도 못 받았다.
     // 시·도가 달라서 수집 리스트(충남)와 지도(충북)가 서로 다른 도를 가리켰다
     expect(mapSigunguCodeOf('44710')).toBe('34310'); // 충남 금산군
     expect(mapSigunguCodeOf('43740')).toBe('33340'); // 충북 영동군
@@ -61,8 +59,8 @@ describe('표 정합성', () => {
     '12330', // 광주 광산구 ┘
   ]);
 
-  it('법정동 시·도와 지도 시·도가 어긋나지 않는다', () => {
-    // 법정동 앞 두 자리마다 지도 앞 두 자리를 다수결로 정하고, 벗어난 행을 찾는다
+  it('표준코드 시·도와 지도 시·도가 어긋나지 않는다', () => {
+    // 표준코드 앞 두 자리마다 지도 앞 두 자리를 다수결로 정하고, 벗어난 행을 찾는다
     const votes: Record<string, Record<string, number>> = {};
     for (const [legal, map] of Object.entries(MAP_SIGUNGU_CODE)) {
       const from = legal.slice(0, 2);

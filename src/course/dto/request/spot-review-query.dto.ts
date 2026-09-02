@@ -1,3 +1,5 @@
+// GET /courses/spots/:contentId/reviews 
+// 한 장소의 후기 페이징.
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
