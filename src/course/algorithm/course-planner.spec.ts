@@ -20,6 +20,8 @@ function spot(overrides: Partial<TourSpot> & { contentId: string }): TourSpot {
     contentTypeId: '12',
     title: `장소-${overrides.contentId}`,
     address: '주소',
+    sigunguCode: null,
+    legalSigunguCode: null,
     latitude: 37.5,
     longitude: 127.0,
     firstImage: 'https://example.com/image.jpg',
@@ -80,7 +82,7 @@ describe('STEP 1 - 테마 확정 (취미의 유일한 사용처)', () => {
 
   it('동점이면 CourseTheme 선언 순서상 앞선 테마를 고른다', () => {
     const themes = [CourseTheme.NATURE_HEALING, CourseTheme.HISTORY_CULTURE];
-    // 매핑 제외 취미라 두 테마 모두 0점
+    // 음악은 예술감성에만 점수가 있어 이 두 테마는 모두 0점
     const result = selectTheme(themes, themes, [Hobby.MUSIC]);
 
     expect(result.theme).toBe(CourseTheme.NATURE_HEALING);
@@ -486,6 +488,98 @@ describe('첫 만남 TPO - HS02(야외 역사유물) 특수 처리', () => {
   });
 });
 
+describe('앵커 선정 - 넓은 도에서 외딴 곳을 피한다', () => {
+  // 강원·경북은 도 하나가 200km를 넘는다. 앵커를 도 전체에서 뽑기 때문에
+  // 혼자 떨어진 곳이 걸리면 나머지 세 자리를 반경 밖에서 끌어와 코스가 성립하지 않는다.
+  it('주변에 갈 곳이 없는 후보는 앵커가 되지 않는다', () => {
+    const pool = [
+      // 뭉쳐 있는 네 곳
+      nature('near1', 'NA02', 0),
+      nature('near2', 'NA03', 0.5),
+      nature('near3', 'NA04', 0.8),
+      nature('near4', 'NA05', 1.2),
+      // 200km 밖에 혼자 있는 곳
+      nature('remote', 'NA02', 200),
+    ];
+
+    const course = selectCourse(pool, CourseTheme.NATURE_HEALING, 'seed');
+
+    const picked = course.spots.map((s) => s.spot.contentId);
+    expect(picked).not.toContain('remote');
+  });
+
+  it('뭉친 곳이 하나도 없으면 거르지 않는다 - 빈 코스를 낼 수는 없다', () => {
+    // 전부 100km씩 떨어져 있어 어느 후보도 이웃이 없다
+    const scattered = [
+      nature('s1', 'NA02', 0),
+      nature('s2', 'NA03', 100),
+      nature('s3', 'NA04', 200),
+      nature('s4', 'NA05', 300),
+    ];
+
+    const course = selectCourse(scattered, CourseTheme.NATURE_HEALING, 'seed');
+
+    expect(course).not.toBeNull();
+    expect(course.spots).toHaveLength(4);
+  });
+});
+
+describe('섬끼리 묶이지 않는다', () => {
+  // 거리 계산이 직선거리라 배로만 가는 곳도 "2km"로 나온다.
+  // 실제로 여수 코스가 낭도항 -> 사도 -> 추도로 뽑힌 적이 있다.
+  const island = (id: string, name: string, km: number) =>
+    spot({
+      contentId: id,
+      title: name,
+      lclsSystm1: 'NA',
+      lclsSystm2: 'NA02',
+      longitude: lngAtKm(km),
+    });
+  const land = (id: string, name: string, sub: string, km: number) =>
+    spot({
+      contentId: id,
+      title: name,
+      lclsSystm1: 'NA',
+      lclsSystm2: sub,
+      longitude: lngAtKm(km),
+    });
+
+  it('섬으로 보이는 곳은 한 코스에 하나까지만 들어간다', () => {
+    const pool = [
+      island('i1', '사도', 0),
+      island('i2', '추도', 0.4),
+      island('i3', '낭도항', 0.8),
+      land('l1', '용화해변', 'NA03', 1.0),
+      land('l2', '맹방솔밭', 'NA04', 1.4),
+      land('l3', '근덕공원', 'NA05', 1.8),
+      land('l4', '초곡전망대', 'NA03', 2.2),
+    ];
+
+    const course = selectCourse(pool, CourseTheme.NATURE_HEALING, 'seed');
+
+    const islands = course.spots.filter((s) =>
+      ['사도', '추도', '낭도항'].includes(s.spot.title),
+    );
+    expect(islands.length).toBeLessThanOrEqual(1);
+  });
+
+  it('후보가 전부 섬이면 규칙을 풀어서라도 코스를 만든다', () => {
+    // 신안·옹진처럼 섬뿐인 지역. 결제가 끝난 뒤라 빈 코스를 낼 수 없다
+    const pool = [
+      island('i1', '사도', 0),
+      island('i2', '추도', 0.4),
+      island('i3', '낭도', 0.8),
+      island('i4', '오동도', 1.2),
+      island('i5', '거문도', 1.6),
+    ];
+
+    const course = selectCourse(pool, CourseTheme.NATURE_HEALING, 'seed');
+
+    expect(course).not.toBeNull();
+    expect(course.spots).toHaveLength(4);
+  });
+});
+
 describe('STEP 3 - 앵커 기반 선정', () => {
   // 자연힐링 템플릿용 기본 풀: 앵커 근처에 역할별 후보가 다 있는 상태
   const compactPool = [
@@ -886,9 +980,25 @@ describe('연관도 표 (STEP 1 전용)', () => {
     expect(affinityOf(Hobby.ART, CourseTheme.ART_SENSIBILITY)).toBe(3);
   });
 
-  it('매핑 제외 취미(IT/독서/동물/음악)는 모든 테마에서 0점이다', () => {
-    for (const hobby of [Hobby.IT, Hobby.READING, Hobby.ANIMAL, Hobby.MUSIC]) {
+  it('노션 표에 없던 취미(IT/독서/동물/음악)도 가까운 테마에는 점수가 있다', () => {
+    expect(affinityOf(Hobby.READING, CourseTheme.ART_SENSIBILITY)).toBe(3);
+    expect(affinityOf(Hobby.MUSIC, CourseTheme.ART_SENSIBILITY)).toBe(3);
+    expect(affinityOf(Hobby.IT, CourseTheme.NATURE_HEALING)).toBe(3);
+    expect(affinityOf(Hobby.ANIMAL, CourseTheme.NATURE_HEALING)).toBe(3);
+    expect(affinityOf(Hobby.ANIMAL, CourseTheme.WALKING_TRIP)).toBe(3);
+  });
+
+  it('그 취미들도 지정한 테마 밖에서는 여전히 0점이다', () => {
+    const mapped = new Map<Hobby, CourseTheme[]>([
+      [Hobby.READING, [CourseTheme.ART_SENSIBILITY]],
+      [Hobby.MUSIC, [CourseTheme.ART_SENSIBILITY]],
+      [Hobby.IT, [CourseTheme.NATURE_HEALING]],
+      [Hobby.ANIMAL, [CourseTheme.NATURE_HEALING, CourseTheme.WALKING_TRIP]],
+    ]);
+
+    for (const [hobby, themes] of mapped) {
       for (const theme of Object.values(CourseTheme)) {
+        if (themes.includes(theme)) continue;
         expect(affinityOf(hobby, theme)).toBe(0);
       }
     }

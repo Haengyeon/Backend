@@ -15,6 +15,15 @@ export const RELAX_RADIUS_STEPS_KM = [7, 10];
 
 export const ANCHOR_TRIES = 15;
 
+/** 한 코스에 넣을 수 있는 섬 후보 수. 둘이면 사이를 배로 건너야 한다 */
+export const MAX_ISLAND_SPOTS = 1;
+
+/** 앵커 주변에 갈 곳이 있는지 재는 반경. 슬롯 탐색 반경의 끝과 맞춘다 */
+export const ANCHOR_NEIGHBOR_RADIUS_KM = 5;
+
+/** 앵커가 되려면 이 반경 안에 있어야 하는 다른 후보 수. 4곳을 도니 셋은 있어야 한다 */
+export const ANCHOR_MIN_NEIGHBORS = 3;
+
 /** 슬롯당 조합 탐색에 넣을 후보 수 */
 export const CANDIDATES_PER_SLOT = 6;
 
@@ -210,6 +219,35 @@ interface ScoredCombination {
 }
 
 /**
+ * 이름만 보고 섬(또는 섬으로 드나드는 항)인지 짐작한다.
+ *
+ * 거리 계산이 직선거리라서 배로만 오갈 수 있는 곳도 "2km"로 나온다.
+ * 실제로 여수 코스가 낭도항 -> 사도 -> 추도로 뽑힌 적이 있는데, 셋 다 다른 섬이라
+ * 총 3.4km짜리 도보 코스처럼 안내될 뻔했다.
+ *
+ * 이름으로 거르는 건 거칠다. 육지인데 '~도'로 끝나거나 육지 항구도 걸린다.
+ * 그래서 완전히 막지 않고 "한 코스에 하나까지"만 허용한다. 오동도처럼 다리로
+ * 걸어 들어가는 섬 하나는 그대로 두고, 섬을 두 개 이상 묶는 것만 막는다.
+ * 지형 데이터를 붙이기 전까지 쓰는 임시 방편이다.
+ */
+function looksLikeIsland(spot: TourSpot): boolean {
+  // "추도(여수)"처럼 괄호가 붙으면 끝 글자를 못 본다
+  const name = spot.title.replace(/\(.*?\)/g, ' ').trim();
+
+  // 주소 첫 칸은 시·도다. '강원특별자치도'가 늘 걸리므로 떼고 본다
+  const address = spot.address.split(/\s+/).slice(1).join(' ');
+
+  if (/섬/.test(name) || /섬/.test(address)) return true;
+
+  // '사도', '초곡항'처럼 이름이 도·항으로 끝나는 경우
+  if (/[가-힣](?:도|항)(?:\s|$)/.test(`${name} `)) return true;
+
+  // 이름은 안 걸려도 주소에 '사도길', '낭도리'처럼 섬 이름이 남는다.
+  // (여수 낭도리 공룡발자국화석 산지가 이 경우다)
+  return /[가-힣]도(?=길|리)/.test(address);
+}
+
+/**
  * 후보군을 조합해 가능한 경로를 모두 만들고 최적 하나를 고른다.
  * 슬롯 i의 후보는 항상 i번째 자리에 들어간다. 시간대 의미가 있어 순서는 바꾸지 않는다.
  */
@@ -217,6 +255,7 @@ function bestCombination(
   anchor: TourSpot,
   slots: SlotCandidates[],
   requireDistinct: boolean,
+  limitIslands: boolean,
 ): ScoredCombination | null {
   let best: ScoredCombination | null = null;
 
@@ -234,6 +273,15 @@ function bestCombination(
 
     for (const candidate of list) {
       if (usedIds.has(candidate.contentId)) continue;
+
+      // 섬끼리 묶이면 사이를 배로 건너야 한다
+      if (
+        limitIslands &&
+        looksLikeIsland(candidate) &&
+        [anchor, ...chosen].filter(looksLikeIsland).length >= MAX_ISLAND_SPOTS
+      ) {
+        continue;
+      }
 
       if (requireDistinct && spec.distinctFromOrder) {
         const reference = [anchor, ...chosen][spec.distinctFromOrder - 1];
@@ -256,6 +304,36 @@ function bestCombination(
 }
 
 /**
+ * 주변에 갈 곳이 없는 앵커 후보를 걸러낸다.
+ *
+ * 앵커는 도 전체 풀에서 뽑는다. 매칭이 시·도까지만 정해 주고 두 사람이 어디 사는지는
+ * 알 수 없기 때문이다. 그런데 강원·경북처럼 넓은 도는 후보가 200km 넘게 흩어져 있어서
+ * (실측: 강원 삼척~철원 226km, 경북은 울릉도까지 2370km) 혼자 떨어진 곳이 앵커가 되면
+ * 나머지 세 자리를 반경 밖에서 끌어오게 된다. buildList가 5km 안에 후보가 모자라면
+ * 가까운 순으로 밖에서 채우기 때문에, 하루에 못 도는 코스가 조용히 만들어진다.
+ *
+ * 사용자 위치를 모르니 "관광지가 뭉쳐 있는 곳"을 대신 기준으로 삼는다.
+ * 서울처럼 어디나 밀집한 지역은 거의 다 통과해서 영향이 없고,
+ * 도 단위에서는 시내·관광 거점이 자연히 앞으로 온다.
+ *
+ * 뭉친 곳이 하나도 없으면 거르지 않는다. 결제가 끝난 뒤라 빈 코스를 낼 수는 없다.
+ */
+function clustered(candidates: TourSpot[], pool: TourSpot[]): TourSpot[] {
+  const hasNeighbors = (anchor: TourSpot) => {
+    let count = 0;
+    for (const spot of pool) {
+      if (spot.contentId === anchor.contentId) continue;
+      if (haversineKm(anchor, spot) > ANCHOR_NEIGHBOR_RADIUS_KM) continue;
+      if (++count >= ANCHOR_MIN_NEIGHBORS) return true;
+    }
+    return false;
+  };
+
+  const dense = candidates.filter(hasNeighbors);
+  return dense.length > 0 ? dense : candidates;
+}
+
+/**
  * 후보군 조합 기반 전체 경로 최적화.
  *
  * 앵커(1번 슬롯) 후보마다 나머지 슬롯의 후보군을 뽑고, 조합을 전부 만들어
@@ -274,7 +352,10 @@ export function selectCourse(
   const template = templateFor(theme);
 
   let anchors = rank(
-    pool.filter((spot) => matchesFilter(spot, template[0].filter)),
+    clustered(
+      pool.filter((spot) => matchesFilter(spot, template[0].filter)),
+      pool,
+    ),
     seed,
     template[0],
   ).slice(0, ANCHOR_TRIES);
@@ -283,7 +364,10 @@ export function selectCourse(
 
   if (anchors.length === 0) {
     anchors = rank(
-      pool.filter((spot) => matchesFilter(spot, THEME_FILTER[theme])),
+      clustered(
+        pool.filter((spot) => matchesFilter(spot, THEME_FILTER[theme])),
+        pool,
+      ),
       seed,
     ).slice(0, ANCHOR_TRIES);
     anchorRelaxation = '1번 역할 후보 없음 -> 테마 기준 앵커';
@@ -291,42 +375,60 @@ export function selectCourse(
 
   // 테마에 맞는 곳이 지역에 하나도 없어도 빈 코스를 낼 수는 없다
   if (anchors.length === 0) {
-    anchors = rank(pool, seed).slice(0, ANCHOR_TRIES);
+    anchors = rank(clustered(pool, pool), seed).slice(0, ANCHOR_TRIES);
     anchorRelaxation = '테마 후보 없음 -> 지역 전체에서 앵커 선정';
   }
 
-  const courses: SelectedCourse[] = [];
+  const buildCourses = (limitIslands: boolean): SelectedCourse[] => {
+    const built: SelectedCourse[] = [];
 
-  for (const anchor of anchors) {
-    const slots: SlotCandidates[] = [];
-    for (const spec of template.slice(1)) {
-      const candidates = collectSlotCandidates(pool, spec, anchor, theme, seed);
-      if (!candidates) break;
-      slots.push(candidates);
+    for (const anchor of anchors) {
+      const slots: SlotCandidates[] = [];
+      for (const spec of template.slice(1)) {
+        const candidates = collectSlotCandidates(
+          pool,
+          spec,
+          anchor,
+          theme,
+          seed,
+        );
+        if (!candidates) break;
+        slots.push(candidates);
+      }
+      if (slots.length < template.length - 1) continue;
+
+      // 중분류 중복 회피를 먼저 시도하고, 그걸로 만들 수 있는 경로가 없으면 푼다
+      const combination =
+        bestCombination(anchor, slots, true, limitIslands) ??
+        bestCombination(anchor, slots, false, limitIslands);
+      if (!combination) continue;
+
+      built.push({
+        spots: combination.spots.map((spot, index) => ({
+          role: template[index].role,
+          spot,
+          relaxation:
+            index === 0
+              ? anchorRelaxation
+              : describeRelaxation(anchor, spot, slots[index - 1].source),
+        })),
+        totalDistanceKm: combination.path.totalDistanceKm,
+        backtrackPenaltyKm:
+          combination.path.reversalKm + combination.path.revisitKm,
+        score: combination.path.score,
+      });
     }
-    if (slots.length < template.length - 1) continue;
 
-    // 중분류 중복 회피를 먼저 시도하고, 그걸로 만들 수 있는 경로가 없으면 푼다
-    const combination =
-      bestCombination(anchor, slots, true) ??
-      bestCombination(anchor, slots, false);
-    if (!combination) continue;
+    return built;
+  };
 
-    courses.push({
-      spots: combination.spots.map((spot, index) => ({
-        role: template[index].role,
-        spot,
-        relaxation:
-          index === 0
-            ? anchorRelaxation
-            : describeRelaxation(anchor, spot, slots[index - 1].source),
-      })),
-      totalDistanceKm: combination.path.totalDistanceKm,
-      backtrackPenaltyKm:
-        combination.path.reversalKm + combination.path.revisitKm,
-      score: combination.path.score,
-    });
-  }
+  // 섬 제한은 앵커를 다 돌려본 뒤에 푼다. 앵커별로 바로 풀어 버리면
+  // 첫 앵커가 섬이라는 이유만으로 섬 코스가 나온다 — 다른 앵커에는
+  // 육지 조합이 있는데도. 신안·옹진처럼 후보가 전부 섬인 지역에서만 풀린다.
+  const courses = (() => {
+    const limited = buildCourses(true);
+    return limited.length > 0 ? limited : buildCourses(false);
+  })();
 
   if (courses.length === 0) return null;
 
