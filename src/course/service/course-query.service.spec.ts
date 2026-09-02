@@ -17,6 +17,7 @@ type CourseWhere = {
     status?: unknown;
     completedAt?: { gte: Date };
     reviews?: { none: { userId: string } };
+    matchAttempt?: { partnerReviews: { none: { reviewerId: string } } };
   }[];
 };
 
@@ -49,7 +50,22 @@ describe('getCurrent - 완료 카드', () => {
     );
     expect(completed).toBeDefined();
     // 내 후기가 있으면 카드는 할 일을 다 한 것이다
-    expect(completed!.reviews).toEqual({ none: { userId: USER_ID } });
+    expect(completed!.matchAttempt).toEqual({
+      partnerReviews: { none: { reviewerId: USER_ID } },
+    });
+  });
+
+  it('"후기를 썼다"의 기준은 코스 한줄평이 아니라 상대 후기다', async () => {
+    // 한줄평(course.reviews)은 선택이라, 그걸로 보면 상대 후기만 쓰고
+    // 한줄평을 건너뛴 사람에게 "후기 쓰러 가기" 카드가 계속 남는다
+    const { service, branches } = buildService(null);
+
+    await service.getCurrent(USER_ID);
+
+    const completed = branches().find(
+      (b) => b.status === CourseStatus.COMPLETED,
+    );
+    expect(completed!.reviews).toBeUndefined();
   });
 
   it('"다시 매칭하기"를 눌러 새 매칭이 열려 있으면 완료 카드가 빠진다', async () => {
