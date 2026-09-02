@@ -1,3 +1,5 @@
+// POST /courses/regenerate 
+// 코스 없이 지나간 매칭을 다시 시도하는 개발용.
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNotEmpty, IsString } from 'class-validator';
 

@@ -7,6 +7,23 @@ export class EarnedStampDto {
   @ApiProperty({ enum: Region })
   region: Region;
 
+  @ApiProperty({ example: '서울' })
+  regionLabel: string;
+
+  @ApiProperty({
+    nullable: true,
+    example: '중구',
+    description:
+      '대응표에 없는 코드면 null. regionLabel과 이어 붙여 화면에 쓴다',
+  })
+  sigunguName: string | null;
+
+  @ApiProperty({
+    example: '11020',
+    description: '수집 지도에서 칠할 칸. 스탬프 하나가 칸 하나다',
+  })
+  mapSigunguCode: string;
+
   @ApiProperty()
   earnedAt: Date;
 }
@@ -22,17 +39,18 @@ export class CourseCompletionResponseDto {
   completedAt: Date | null;
 
   @ApiProperty({
-    type: EarnedStampDto,
-    nullable: true,
-    description: '이미 가진 지역이면 null. 스탬프는 지역당 하나다',
+    type: [EarnedStampDto],
+    description:
+      '이번에 새로 찍힌 스탬프. 스탬프는 시군구 단위라 코스가 여러 구에 걸치면 ' +
+      '여러 개가 나오고, 이미 다녀온 구뿐이면 빈 배열이다',
   })
-  earnedStamp: EarnedStampDto | null;
+  earnedStamps: EarnedStampDto[];
 
-  @ApiProperty({ example: 1000 })
-  earnedPoint: number;
+  @ApiProperty({ example: 1000, description: '이번 완료로 받은 포인트' })
+  earnedPoints: number;
 
-  @ApiProperty({ example: 3000, description: '적립 후 잔액' })
-  balanceAfter: number;
+  @ApiProperty({ example: 3000, description: '적립 후 포인트' })
+  pointsAfter: number;
 }
 
 export class MissionPhotoResponseDto {
@@ -121,7 +139,7 @@ export class CourseReviewResponseDto {
   createdAt: Date;
 
   // 후기 작성 포인트는 액수가 정해지지 않아 아직 지급하지 않는다.
-  // 정해지면 earnedPoint / balanceAfter를 여기에 되살린다.
+  // 정해지면 earnedPoints / pointsAfter를 여기에 되살린다.
 
   @ApiProperty({ description: '상대도 후기를 썼는지' })
   partnerReviewArrived: boolean;

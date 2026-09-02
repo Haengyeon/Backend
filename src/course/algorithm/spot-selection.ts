@@ -1,4 +1,15 @@
-// 후보가 기준점에서 1키로
+// 후보 수백 곳 중에서 하루 코스가 되는 4곳을 고른다.
+//
+// 구성표(course-template.ts)는 "1번은 카페, 2번은 맛집" 같은 틀만 정한다.
+// 그 자리에 실제로 어느 장소를 넣을지는 여기서 정한다.
+//
+// 고르는 순서
+//   1. 앵커(1번 장소) — 주변에 갈 곳이 몇 군데 있는 곳으로 고른다.
+//      한적한 곳을 잡으면 나머지 3곳이 멀어져서 하루에 못 돈다.
+//   2. 나머지 슬롯 — 앵커에서 가까운 순으로 후보를 모은다.
+//      1~5km에 없으면 7, 10km로 넓히고 왜 넓혔는지 남긴다(relaxation).
+//   3. 조합 — 후보를 조합해 경로를 다 만들고 이동거리가 짧은 것을 고른다.
+//   4. 같은 조건이어도 커플마다 다른 코스가 나오도록 matchAttemptId로 하나 고른다.
 import { CourseTheme } from '../../generated/prisma/enums';
 import { templateFor } from './course-template';
 import { sanitizePool } from './first-date-policy';

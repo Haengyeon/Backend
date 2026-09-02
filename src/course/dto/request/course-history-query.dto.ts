@@ -1,3 +1,5 @@
+// GET /courses/history
+//  완료 코스 목록 페이징.
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';

@@ -1,4 +1,5 @@
-// 테마 카테코리 구별법
+// 정해진 테마로 TourAPI에서 뭘 긁어올지
+// 분류코드 필터
 import { CourseTheme, Region } from '../../generated/prisma/enums';
 import { CategoryGroup, SpotFilter, TourSpot } from './types';
 

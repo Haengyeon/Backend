@@ -1,7 +1,7 @@
 // course-planner.ts(알고리즘) 호출해서 코스 생성 후 DB 저장
 //
 // 흐름
-//  1. MatchAttempt 조회 (양쪽 결제 완료 상태 가정)
+//  1. 양쪽 결제가 끝난 매칭(CONFIRMED)
 //  2. TourAPI 후보 풀 수집
 //  3. buildCoursePlan() 호출해 코스 생성
 //  4. Course / CourseSpot / CourseMission을 트랜잭션으로 저장
@@ -31,11 +31,12 @@ export class CourseGeneratorService {
     private readonly tourApi: TourApiClient,
   ) {}
 
-  // 양쪽 결제가 끝난 매칭(CONFIRMED)에 대해 코스를 만들어줌
-  // 생성만 담당하고 courseId만 돌려준다.
-  // dbd에 matchAtteptId 조회해봄. matchAtteptId가 있다면 이미 생성된 코스이므로 그대로 반환(아마 이런 일은 없을듯)
-  // 만약에 결제가 승인이 잘못되어서 matchAtteptId가 2번 생길 경우을 위해 만듬
-  // 조회 기능이 없다면 이미 있는 코스를 보여줘야하는데 안보여주고 tourapi에서 만들고 나중에 prisma한테 툭정 matchAtteptId와 코스가 있다 라고 막혀서 tourapi만 괜히 호출한 사람됨
+  // 만들기 전에 이미 있는지부터 본다.
+  //
+  // Course.matchAttemptId에 유니크가 걸려 있어서, 조회 없이 진행하면
+  // TourAPI를 실컷 부르고 저장 단계에서야 막힌다. 그 호출이 통째로 헛수고가 된다.
+  //
+  // 결제 승인이 두 번 들어오는 경우를 대비한 것이라 평소엔 걸릴 일이 없다.
   async generateForMatchAttempt(
     matchAttemptId: string,
   ): Promise<{ id: string }> {
@@ -95,13 +96,10 @@ export class CourseGeneratorService {
   /**
    * 코스에 쓸 테마를 정한다. 취미가 반영되는 유일한 지점이다.
    *
-   * MatchAttempt.theme은 매칭 엔진이 "겹치는 첫 번째 테마"로 잡아 둔 값이라
-   * 두 사람이 테마를 입력한 순서에 따라 결과가 달라진다. 여기서 공통 취미
-   * 연관도를 합산해 다시 고르고, 아래 persist에서 MatchAttempt.theme에도
-   * 같은 값을 써 넣어 둘이 어긋나지 않게 한다.
+   * 매칭이 잡아 둔 theme은 "겹치는 첫 번째 테마"라 입력 순서에 따라 달라진다.
+   * 그래서 공통 취미 연관도를 합산해 여기서 다시 고른다.
    *
-   * 테마가 안 겹치는데 취미만으로 성사된 매칭도 있어서, 그때는 고를 근거가
-   * 없으므로 매칭이 정한 값을 그대로 쓴다.
+   * 고를 수 없으면(겹치는 테마나 공통 취미가 없으면) 매칭 값을 그대로 쓴다.
    */
   private decideTheme(attempt: {
     theme: CourseTheme;

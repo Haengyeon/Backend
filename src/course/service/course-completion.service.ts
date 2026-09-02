@@ -3,9 +3,7 @@
 // 완료는 버튼이 아니라 조건이다. 기준은 시간 — 여행일이 지나면 끝난 것으로 본다.
 // 실제로 코스를 닫는 것은 course-schedule.service.ts의 시계다.
 //
-// 원래는 인증샷 8장(4곳 x 두 사람)이 다 차야 완료였는데, 한 사람만 올리거나
-// 한 곳을 건너뛰면 다녀오고도 코스가 영영 열린 채 남았다. 사진은 추억이지
-// 완료 조건이 아니라서 기준을 날짜로 바꿨다.
+//  기준을 날짜로 바꿨다.
 //
 // 완료를 사용자가 누르는 API로 두지 않는 이유는 그대로다. 두 사람이 같이 걸은
 // 코스인데 먼저 누른 쪽만 보상을 받게 된다.
@@ -16,6 +14,9 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CourseStatus } from '../../generated/prisma/enums';
+import { REGION_LABEL } from '../algorithm/labels';
+import { lumpedCellNameOf } from '../algorithm/sigungu-map-code';
+import { sigunguNameOf } from '../algorithm/sigungu-name';
 import { daysUntil } from '../course-date.util';
 import { CourseCompletionResponseDto } from '../dto/response/course-progress-response.dto';
 import { CourseAccessService } from './course-access.service';
@@ -75,14 +76,10 @@ export class CourseCompletionService {
   }
 
   /**
-   * 코스를 닫고 두 사람에게 보상을 준다.
+   * 코스를 완료로 바꾸고 두 사람에게 보상을 준다.
    *
-   * 여행 다음 날 시계가 부르고, 뒷문 API도 같은 길로 온다. 시계가 도는 중에
-   * 사용자가 뒷문을 누르면 완료 처리가 두 번 돌 수 있어, 상태를 조건부로 바꾸고
-   * 바뀐 행이 없으면 이미 끝난 것으로 보고 물러난다. 먼저 통과한 쪽이 두 사람
-   * 몫을 모두 지급하므로 물러나도 보상이 새지 않는다.
-   *
-   * @returns 요청자 기준 완료 결과. 이미 완료돼 있었으면 null
+   * 시계와 완료 API가 동시에 불러도 보상은 한 번만 나간다.
+   * 이미 완료된 코스면 아무것도 하지 않고 null.
    */
   async completeCourse(
     courseId: string,
@@ -104,6 +101,12 @@ export class CourseCompletionService {
           status: true,
           completedAt: true,
           region: true,
+          // 스탬프는 코스가 지나간 시군구마다 찍힌다. 방문 순서대로 읽는 이유는
+          // 같은 지도 칸에 구가 겹칠 때 먼저 들른 쪽 이름을 남기기 위해서다.
+          spots: {
+            orderBy: { order: 'asc' },
+            select: { sigunguCode: true, legalSigunguCode: true },
+          },
           matchAttempt: {
             select: {
               id: true,
@@ -125,8 +128,9 @@ export class CourseCompletionService {
       // 매칭 사이클을 닫는다.
       //
       // 새 매칭은 "끝나지 않은 매칭이 있으면" 막힌다(endedAt: null 검사).
-      // 여기서 닫지 않으면 여행을 잘 다녀오고도 다음 매칭을 영영 못 한다.
-      // 홈의 "다시 매칭하기" 버튼이 눌리는 지점이 여기다.
+      // 여기서 닫아야 홈의 "다시 매칭하기"가 눌리는 상태가 된다.
+      // 안 닫으면 여행을 잘 다녀오고도 다음 매칭을 영영 못 한다.
+      // (버튼을 눌렀는지 알아채는 쪽은 course-query.service의 getCurrent다)
       //
       // 완료가 시간으로 걸리는 이상 재매칭도 시간으로 열리는 게 맞다.
       // 후기를 조건으로 걸면 안 쓴 사람이 영영 갇힌다.
@@ -153,9 +157,18 @@ export class CourseCompletionService {
         id: completed.id,
         status: completed.status,
         completedAt: completed.completedAt,
-        earnedStamp: mine.stamp,
-        earnedPoint: COURSE_COMPLETE_POINT,
-        balanceAfter: mine.balanceAfter,
+        earnedStamps: mine.stamps.map((stamp) => ({
+          region: stamp.region,
+          regionLabel: REGION_LABEL[stamp.region],
+          // 지도가 구를 안 나눠 그린 칸은 칸 이름으로. 목록과 지도가 어긋나지 않게 한다
+          sigunguName:
+            lumpedCellNameOf(stamp.mapSigunguCode) ??
+            sigunguNameOf(stamp.region, stamp.sigunguCode),
+          mapSigunguCode: stamp.mapSigunguCode,
+          earnedAt: stamp.earnedAt,
+        })),
+        earnedPoints: COURSE_COMPLETE_POINT,
+        pointsAfter: mine.pointsAfter,
       };
     });
   }

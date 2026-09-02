@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
-import { RewardService } from './reward.service';
-import { RewardController } from './reward.controller';
+import { RewardController } from './controller/reward.controller';
+import { PointService } from './service/point.service';
+import { StampService } from './service/stamp.service';
 
 @Module({
   controllers: [RewardController],
-  providers: [RewardService],
+  providers: [PointService, StampService],
 })
 export class RewardModule {}

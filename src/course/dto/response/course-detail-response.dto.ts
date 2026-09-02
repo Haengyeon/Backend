@@ -11,7 +11,6 @@
 // 한 번의 조회로 다 받게 한다.
 //
 // 조건부 필드가 많아 class-transformer로 걸러내지 않고 서비스에서 직접 조립한다.
-// 여기 있는 데코레이터는 스웨거 문서용이다.
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CourseStatus,
