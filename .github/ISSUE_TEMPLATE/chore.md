@@ -2,7 +2,7 @@
 name: Chore
 about: 'Chore 세팅, 문서, 설정 '
 title: "[Chore]"
-labels: invalid
+labels: ''
 assignees: ''
 
 ---
