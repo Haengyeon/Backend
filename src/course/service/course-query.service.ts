@@ -9,13 +9,21 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CourseStatus, MatchAttemptStatus } from '../../generated/prisma/enums';
 import {
+  CourseStatus,
+  MatchAttemptStatus,
+  Region,
+} from '../../generated/prisma/enums';
+import {
+  REGION_LABEL,
   THEME_DRESS_TIP,
   THEME_INDOOR,
   THEME_LABEL,
   formatDuration,
 } from '../algorithm/labels';
+import { mapSigunguCodeOf } from '../algorithm/sigungu-map-code';
+import { sigunguNameOf } from '../algorithm/sigungu-name';
+import { summarizeDescription } from '../course-text.util';
 import { daysUntil, toDateString, viewTypeOf } from '../course-date.util';
 import {
   CourseDetailResponseDto,
@@ -30,6 +38,18 @@ import { CourseReviewService } from './course-review.service';
 
 /** 진행중 코스로 볼 상태 */
 const ONGOING_STATUSES = [CourseStatus.UPCOMING, CourseStatus.IN_PROGRESS];
+
+/**
+ * 완료된 코스를 홈 카드로 남겨 두는 시간.
+ *
+ * "여행이 완료되었어요 — 후기 남기실래요?"는 인사에 가깝다. 하루면 할 말을
+ * 다 했고, 그 뒤로는 홈이 다음 여행을 권하는 게 맞다. 안 내리면 두 달 전
+ * 여행이 계속 홈을 차지한다.
+ *
+ * 후기를 놓쳐도 잃는 건 없다. 기록 탭에서 그 코스를 열어 언제든 쓸 수 있고,
+ * 재매칭도 후기와 무관하게 완료 시점에 이미 열려 있다.
+ */
+const COMPLETED_CARD_HOURS = 24;
 
 export const HISTORY_DEFAULT_LIMIT = 10;
 export const HISTORY_MAX_LIMIT = 30;
@@ -83,15 +103,25 @@ export class CourseQueryService {
     const dday = daysUntil(course.travelDate);
     const viewType = viewTypeOf(dday);
 
-    // 어느 단계에서도 나가는 최소 정보
+    const visited = this.visitedSigungu(course.spots, course.region);
+
+    // 어느 단계에서도 나가는 최소 정보.
+    //
+    // 상대와 시군구는 D-2 이전에도 연다. 매칭 확정 화면이 "누구와, 어느 동네로"를
+    // 보여줘야 하는데 그것까지 가리면 D-day만 남아 카드가 비어 버린다.
+    // 상대는 매칭을 수락할 때 이미 본 사람이고, 구 단위는 장소가 아니라 동네라
+    // "어디 가는지"를 감추려던 취지도 깨지지 않는다.
     const base: CourseDetailResponseDto = {
       viewType,
       id: course.id,
       region: course.region,
+      regionLabel: REGION_LABEL[course.region],
+      sigunguNames: visited.names,
       theme: course.theme,
       themeLabel: THEME_LABEL[course.theme],
       travelDate: toDateString(course.travelDate),
       dday,
+      partner: this.toPartnerDto(sides.partnerProfile),
     };
 
     if (viewType === 'LOCKED') return base;
@@ -102,7 +132,6 @@ export class CourseQueryService {
       title: course.title,
       description: course.description,
       thumbnailUrl: course.thumbnailUrl,
-      partner: this.toPartnerDto(sides.partnerProfile),
       preview: {
         isIndoor: THEME_INDOOR[course.theme],
         estimatedTime: formatDuration(course.durationMinutes ?? 0),
@@ -120,7 +149,7 @@ export class CourseQueryService {
     );
 
     const spots = course.spots.map((spot) =>
-      this.toSpotDto(spot, userId, sides.partnerUserId, reviews),
+      this.toSpotDto(spot, course.region, userId, sides.partnerUserId, reviews),
     );
 
     const full: CourseDetailResponseDto = {
@@ -128,14 +157,17 @@ export class CourseQueryService {
       status: course.status,
       durationMinutes: course.durationMinutes,
       totalDistanceKm: course.totalDistanceKm,
+      mapSigunguCodes: visited.codes,
       mapCenter: this.averageCenter(spots),
       spots,
     };
 
-    if (course.status !== CourseStatus.COMPLETED) return full;
-
-    // 완료된 코스는 추억 페이지가 된다. 영상과 후기를 함께 실어
+    // 다녀온 뒤 화면은 추억 페이지가 된다. 영상과 후기를 함께 실어
     // 화면이 한 번의 조회로 그려지게 한다.
+    //
+    // 완료(COMPLETED)를 기다리지 않는다. 완료는 여행 다음 날인데 후기는 당일부터
+    // 쓸 수 있어서, 완료를 기준으로 잡으면 그날 밤에 쓴 후기를 다시 못 본다.
+    // 여기는 FULL 분기 안이라 이미 여행 당일이거나 그 뒤다.
     return {
       ...full,
       video: course.video
@@ -157,12 +189,45 @@ export class CourseQueryService {
    * 화면이 "코스 없음"과 "만드는 중"을 구분해야 하기 때문이다.
    */
   async getCurrent(userId: string): Promise<CurrentCourseResponseDto> {
+    // 홈의 "다시 매칭하기"를 눌렀는지는 새 매칭이 있는지로 안다.
+    //
+    // 코스가 완료될 때 그 코스의 매칭 두 건은 모두 닫히므로(endedAt), 완료 뒤에
+    // 열린 매칭이 있다는 건 사용자가 스스로 다음 사이클을 열었다는 뜻이다.
+    // 버튼을 눌렀다는 신호를 따로 받을 필요가 없다.
+    //
+    // 그 순간 완료 카드는 자리를 비켜야 한다. 안 그러면 매칭을 걸어 놓고 홈에
+    // 돌아왔을 때 "여행이 완료되었어요"가 그대로 있어서, 다음 여행을 찾는 중인지
+    // 지난 여행이 안 끝난 건지 알 수 없게 된다.
+    const movedOn = await this.prisma.matching.findFirst({
+      where: { userId, endedAt: null },
+      select: { id: true },
+    });
+
     const course = await this.prisma.course.findFirst({
       where: {
-        status: { in: ONGOING_STATUSES },
         matchAttempt: this.participantFilter(userId),
+        OR: [
+          { status: { in: ONGOING_STATUSES } },
+          // 끝난 코스는 "후기 쓰러 가기" 카드로 하루 동안 남는다.
+          // 후기를 쓰거나 다시 매칭하러 가면 할 일을 다 했으므로 그 자리에서 빠진다.
+          ...(movedOn
+            ? []
+            : [
+                {
+                  status: CourseStatus.COMPLETED,
+                  completedAt: {
+                    gte: new Date(
+                      Date.now() - COMPLETED_CARD_HOURS * 60 * 60 * 1000,
+                    ),
+                  },
+                  reviews: { none: { userId } },
+                },
+              ]),
+        ],
       },
-      orderBy: { travelDate: 'asc' },
+      // 진행중 코스는 여행일이 미래, 끝난 코스는 과거다. 둘 다 걸리면
+      // (완료 카드가 떠 있는 동안 새로 매칭한 경우) 새 코스를 보여준다
+      orderBy: { travelDate: 'desc' },
       include: detailInclude,
     });
 
@@ -176,6 +241,10 @@ export class CourseQueryService {
           id: course.id,
           title: course.title,
           region: course.region,
+          regionLabel: REGION_LABEL[course.region],
+          // 홈의 매칭 확정 카드가 "경기 안양시" 배지를 그리는 데 쓴다.
+          // 매칭은 시·도까지만 알아서 시군구는 코스에서만 나온다
+          sigunguNames: this.visitedSigungu(course.spots, course.region).names,
           theme: course.theme,
           themeLabel: THEME_LABEL[course.theme],
           travelDate: toDateString(course.travelDate),
@@ -360,6 +429,32 @@ export class CourseQueryService {
     };
   }
 
+  /**
+   * 코스가 걸쳐 있는 시군구. 방문 순서대로 훑으면서 중복만 뺀다.
+   * 한 코스가 여러 구에 걸치는 일이 흔해서(중구 3곳 + 종로구 1곳) 대표 하나를
+   * 고르지 않고 나온 순서대로 다 준다.
+   *
+   * 이름과 표준코드를 따로 모은다. 지도에 칠하는 건 코드 쪽이고,
+   * 이름은 화면에 쓴다.
+   */
+  private visitedSigungu(
+    spots: { sigunguCode: string | null; legalSigunguCode: string | null }[],
+    region: Region,
+  ) {
+    const dedupe = (values: (string | null)[]) => [
+      ...new Set(values.filter((value): value is string => value !== null)),
+    ];
+
+    return {
+      names: dedupe(
+        spots.map((spot) => sigunguNameOf(region, spot.sigunguCode)),
+      ),
+      codes: dedupe(
+        spots.map((spot) => mapSigunguCodeOf(spot.legalSigunguCode)),
+      ),
+    };
+  }
+
   private toSpotDto(
     spot: {
       id: string;
@@ -368,7 +463,10 @@ export class CourseQueryService {
       role: string | null;
       name: string;
       category: string | null;
+      description: string | null;
       address: string;
+      sigunguCode: string | null;
+      legalSigunguCode: string | null;
       latitude: number;
       longitude: number;
       imageUrl: string | null;
@@ -388,6 +486,8 @@ export class CourseQueryService {
         }[];
       }[];
     },
+    // 시군구 코드는 시·도 안에서만 유일해서 이름으로 바꾸려면 지역이 필요하다
+    region: Region,
     userId: string,
     partnerUserId: string,
     reviews: Map<string, { count: number; mine: boolean }>,
@@ -403,7 +503,14 @@ export class CourseQueryService {
       role: spot.role,
       name: spot.name,
       category: spot.category,
+      // 카드 두 줄짜리 자리라 원문을 그대로 보내지 않는다
+      description: summarizeDescription(spot.description),
       address: spot.address,
+      // 내보내는 건 이름과 표준코드뿐. 이름은 이 코드로 만든다
+      sigunguName: sigunguNameOf(region, spot.sigunguCode),
+      // 법정동 코드는 지도 파일과 체계가 달라 그대로 내보내지 않는다.
+      // DB에는 남아 있으니 지도를 바꾸면 표만 다시 만들면 된다
+      mapSigunguCode: mapSigunguCodeOf(spot.legalSigunguCode),
       latitude: spot.latitude,
       longitude: spot.longitude,
       imageUrl: spot.imageUrl,

@@ -130,8 +130,44 @@ export class CourseSpotDto {
   @ApiProperty({ nullable: true, example: '전통시장' })
   category: string | null;
 
+  @ApiProperty({
+    nullable: true,
+    example:
+      '조선 시대의 궁궐로 자연과 건축이 조화를 이루는 아름다운 공간이에요.',
+    description:
+      '장소 소개글. 원문이 길어 문장 끝에서 끊어 보낸다. ' +
+      '목표는 50자지만 첫 문장이 그보다 길면 그 문장이 끝나는 데까지 간다(최대 100자). ' +
+      '말이 중간에 끊기는 것보다 조금 긴 편이 낫다는 판단이다. ' +
+      '한국관광공사 원문이라 말투가 문어체(~이다)다. ' +
+      '못 받아온 장소는 null이고, 그때는 소개 문단을 통째로 숨긴다',
+  })
+  description: string | null;
+
   @ApiProperty({ example: '서울특별시 광진구 자양로' })
   address: string;
+
+  // TourAPI 자체 시군구 번호(sigungucode)는 내보내지 않는다. 관광공사 안에서만
+  // 통하는 숫자라 화면에도 지도에도 쓸 데가 없다. DB에는 남겨 둔다 —
+  // 나중에 "서울 안에서 강남구만" 같은 조회를 할 때 TourAPI 요청 파라미터로 필요하다.
+
+  @ApiProperty({
+    nullable: true,
+    example: '광진구',
+    description:
+      '시군구 이름. 화면에 그대로 쓰면 된다. ' +
+      '코드가 없거나 표에 없는 코드면 null이고, 그때는 시군구 줄을 숨긴다',
+  })
+  sigunguName: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    example: '11050',
+    description:
+      '지도에 칠할 때 쓰는 시군구 코드(서울 광진구 = 11050). ' +
+      'southkorea-maps의 kostat/2018 시군구 파일 code와 같은 값이라 그대로 대조하면 된다. ' +
+      '표에 없는 장소는 null이고, 그때는 지도에서 뺀다 — 엉뚱한 구를 칠하는 것보다 낫다',
+  })
+  mapSigunguCode: string | null;
 
   @ApiProperty({ example: 37.5501 })
   latitude: number;
@@ -174,6 +210,23 @@ export class CourseDetailResponseDto {
   @ApiProperty({ enum: Region })
   region: Region;
 
+  @ApiProperty({
+    example: '서울',
+    description: '지역 한글 이름. 시군구까지 붙은 배지는 areaLabel을 쓰면 된다',
+  })
+  regionLabel: string;
+
+  @ApiProperty({
+    type: [String],
+    example: ['중구', '종로구'],
+    description:
+      '코스가 걸쳐 있는 시군구 이름. 방문 순서대로, 중복은 뺀다. ' +
+      'LOCKED에서도 나간다 — 매칭 확정 화면의 지역 배지가 이것이다. ' +
+      '여러 구에 걸치면 다 적는다. 한 곳만 골라 쓰면 두 곳을 가는 코스인데 ' +
+      '한 곳만 간다고 말하는 셈이라서다. 시군구를 모르는 코스는 빈 배열',
+  })
+  sigunguNames: string[];
+
   @ApiProperty({ enum: CourseTheme })
   theme: CourseTheme;
 
@@ -186,6 +239,14 @@ export class CourseDetailResponseDto {
   @ApiProperty({ example: 0, description: '0이면 당일, 음수면 지난 코스' })
   dday: number;
 
+  @ApiProperty({
+    type: CoursePartnerDto,
+    description:
+      '매칭 상대. LOCKED에서도 나간다 — 매칭을 수락할 때 이미 본 사람이라 ' +
+      '가릴 이유가 없고, 매칭 확정 화면이 두 사람 얼굴을 보여줘야 한다',
+  })
+  partner: CoursePartnerDto;
+
   @ApiPropertyOptional({ example: '서울 로컬 맛집 코스' })
   title?: string;
 
@@ -194,9 +255,6 @@ export class CourseDetailResponseDto {
 
   @ApiPropertyOptional({ nullable: true })
   thumbnailUrl?: string | null;
-
-  @ApiPropertyOptional({ type: CoursePartnerDto })
-  partner?: CoursePartnerDto;
 
   @ApiPropertyOptional({ type: CoursePreviewInfoDto })
   preview?: CoursePreviewInfoDto;
@@ -213,6 +271,15 @@ export class CourseDetailResponseDto {
   @ApiPropertyOptional({ nullable: true, example: 1.3 })
   totalDistanceKm?: number | null;
 
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['11020', '11010'],
+    description:
+      '코스가 지나간 시군구의 지도 코드. 방문 순서대로, 중복은 뺀다. ' +
+      '지도에서 이 코스가 다녀온 구를 칠할 때 이 배열을 그대로 쓰면 된다',
+  })
+  mapSigunguCodes?: string[];
+
   @ApiPropertyOptional({ type: CourseMapCenterDto })
   mapCenter?: CourseMapCenterDto;
 
@@ -222,14 +289,15 @@ export class CourseDetailResponseDto {
   @ApiPropertyOptional({
     type: CourseVideoDto,
     nullable: true,
-    description: '완료된 코스에만. AI 추억영상을 만든 적 없으면 null `미구현`',
+    description: 'FULL부터. AI 추억영상을 만든 적 없으면 null `미구현`',
   })
   video?: CourseVideoDto | null;
 
   @ApiPropertyOptional({
     type: MyReviewResponseDto,
     description:
-      '완료된 코스에만. 내가 쓴 후기와 상대가 나에게 쓴 후기. ' +
+      'FULL부터. 내가 쓴 후기와 상대가 나에게 쓴 후기. ' +
+      '후기는 여행 당일부터 쓸 수 있어 완료를 기다리지 않는다. ' +
       'GET /courses/{courseId}/reviews와 같은 내용이라 화면이 따로 부르지 않아도 된다',
   })
   review?: MyReviewResponseDto;

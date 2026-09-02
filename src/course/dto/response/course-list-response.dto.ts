@@ -26,6 +26,21 @@ export class CurrentCourseDto {
   @ApiProperty({ enum: Region })
   region: Region;
 
+  @ApiProperty({
+    example: '경기',
+    description: '시·도 한글 이름. sigunguNames와 합쳐 지역 배지를 만든다',
+  })
+  regionLabel: string;
+
+  @ApiProperty({
+    type: [String],
+    example: ['안양시'],
+    description:
+      '다녀오는 시군구 전부. regionLabel과 이어 붙이면 "경기 안양시"가 된다. ' +
+      '홈의 매칭 확정 카드에 붙는 배지가 이것이다',
+  })
+  sigunguNames: string[];
+
   @ApiProperty({ enum: CourseTheme })
   theme: CourseTheme;
 
@@ -38,7 +53,13 @@ export class CurrentCourseDto {
   @ApiProperty({ example: 2, description: '0이면 당일' })
   dday: number;
 
-  @ApiProperty({ enum: CourseStatus })
+  @ApiProperty({
+    enum: CourseStatus,
+    description:
+      'UPCOMING(여행 전) / IN_PROGRESS(여행 당일) / ' +
+      'COMPLETED(끝난 지 하루 안이고 후기 아직). ' +
+      'COMPLETED면 홈에 "여행이 완료되었어요 — 후기 쓰러 가기" 카드를 띄운다',
+  })
   status: CourseStatus;
 
   @ApiProperty({ nullable: true })
