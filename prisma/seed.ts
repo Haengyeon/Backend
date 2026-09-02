@@ -31,7 +31,6 @@ const TEST_USERS = [
         id: '1',
         profile: {
             name: '김민준',
-            nickname: '민준',
             birthDate: new Date('1998-05-12'),
             gender: Gender.MALE,
             mbti: Mbti.ENFP,
@@ -47,7 +46,6 @@ const TEST_USERS = [
         id: '2',
         profile: {
             name: '이도윤',
-            nickname: '도윤',
             birthDate: new Date('2000-09-21'),
             gender: Gender.MALE,
             mbti: Mbti.ISTJ,
@@ -64,7 +62,6 @@ const TEST_USERS = [
         id: '3',
         profile: {
             name: '박현우',
-            nickname: '현우',
             birthDate: new Date('1997-02-03'),
             gender: Gender.MALE,
             mbti: Mbti.ESTP,
@@ -81,7 +78,6 @@ const TEST_USERS = [
         id: '4',
         profile: {
             name: '최우진',
-            nickname: '우진',
             birthDate: new Date('1985-11-30'),
             gender: Gender.MALE,
             mbti: Mbti.INTJ,
@@ -99,7 +95,6 @@ const TEST_USERS = [
         id: '5',
         profile: {
             name: '장정운',
-            nickname: '짱정운',
             birthDate: new Date('1999-03-17'),
             gender: Gender.FEMALE,
             mbti: Mbti.INFJ,
@@ -115,7 +110,6 @@ const TEST_USERS = [
         id: '6',
         profile: {
             name: '곽소정',
-            nickname: '소정소중해',
             birthDate: new Date('2001-11-08'),
             gender: Gender.FEMALE,
             mbti: Mbti.ENFP,
@@ -132,7 +126,6 @@ const TEST_USERS = [
         id: '7',
         profile: {
             name: '한서연',
-            nickname: '서연',
             birthDate: new Date('1996-07-22'),
             gender: Gender.FEMALE,
             mbti: Mbti.ISFJ,
@@ -149,7 +142,6 @@ const TEST_USERS = [
         id: '8',
         profile: {
             name: '윤아름',
-            nickname: '아름',
             birthDate: new Date('2003-01-15'),
             gender: Gender.FEMALE,
             mbti: Mbti.ESFP,

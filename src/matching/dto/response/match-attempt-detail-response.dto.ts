@@ -16,7 +16,7 @@ import {
 export class PartnerProfileDto {
     @ApiProperty({ example: '짱정운' })
     @Expose()
-    nickname: string;
+    name: string;
 
     @ApiProperty({ example: 27, description: '만 나이' })
     @Expose()

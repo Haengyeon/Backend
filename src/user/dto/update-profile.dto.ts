@@ -25,11 +25,6 @@ export class UpdateProfileDto {
     name?: string;
 
     @IsOptional()
-    @IsString()
-    @MaxLength(20)
-    nickname?: string;
-
-    @IsOptional()
     @IsDateString()
     birthDate?: string;
 
