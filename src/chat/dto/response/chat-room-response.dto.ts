@@ -57,6 +57,14 @@ export class ChatRoomResponseDto {
     id: string;
 
     @ApiProperty({
+        description:
+            '이 채팅방이 걸린 매칭 건. 신고(POST /safety/reports)와 ' +
+            '차단(POST /safety/blocks)에 그대로 넘긴다',
+    })
+    @Expose()
+    matchAttemptId: string;
+
+    @ApiProperty({
         enum: ChatRoomStatus,
         description: 'LOCKED(여행 전날까지 대기) | OPEN(대화 가능)',
     })

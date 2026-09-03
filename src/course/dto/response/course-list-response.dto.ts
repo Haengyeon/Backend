@@ -20,6 +20,13 @@ export class CurrentCourseDto {
   @ApiProperty()
   id: string;
 
+  @ApiProperty({
+    description:
+      '이 코스가 걸린 매칭 건. 신고(POST /safety/reports)와 ' +
+      '차단(POST /safety/blocks)에 그대로 넘긴다',
+  })
+  matchAttemptId: string;
+
   @ApiProperty({ example: '서울 로컬 맛집 코스' })
   title: string;
 
@@ -93,6 +100,13 @@ export class CourseHistoryVideoDto {
 export class CourseHistoryItemDto {
   @ApiProperty()
   id: string;
+
+  @ApiProperty({
+    description:
+      '이 코스가 걸린 매칭 건. 신고(POST /safety/reports)와 ' +
+      '차단(POST /safety/blocks)에 그대로 넘긴다',
+  })
+  matchAttemptId: string;
 
   @ApiProperty({ example: '서울 로컬 맛집 코스' })
   title: string;

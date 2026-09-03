@@ -825,6 +825,9 @@ enum ReportReasonCode {
   INAPPROPRIATE_PROFILE
   NO_SHOW
   ABUSE_HARASSMENT
+  // 성적 불쾌감을 주는 행위. ABUSE_HARASSMENT와 분리해 둔다 —
+  // 운영자가 처리 우선순위를 다르게 가져가야 하고, 법적 대응 경로도 다르다.
+  SEXUAL_HARASSMENT
   SUSPECTED_FRAUD
   OTHER
 }

@@ -206,6 +206,13 @@ export class CourseDetailResponseDto {
   @ApiProperty()
   id: string;
 
+  @ApiProperty({
+    description:
+      '이 코스가 걸린 매칭 건. 신고(POST /safety/reports)와 ' +
+      '차단(POST /safety/blocks)에 그대로 넘긴다',
+  })
+  matchAttemptId: string;
+
   @ApiProperty({ enum: Region })
   region: Region;
 

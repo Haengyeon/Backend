@@ -10,6 +10,7 @@ import {
 } from '../../generated/prisma/enums';
 import type { Region } from '../../generated/prisma/enums';
 import {calcAge} from "../../common/age.util";
+import { BlockService } from '../../safety/service/block.service';
 
 const RESPOND_WINDOW_MS = 12 * 60 * 60 * 1000; // 12시간 이내 미응답 시 취소
 
@@ -82,7 +83,10 @@ type MatchingWithRelations = NonNullable<
 export class MatchingEngineService {
     private readonly logger = new Logger(MatchingEngineService.name);
 
-    constructor(private readonly prisma: PrismaService) {}
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly blocks: BlockService,
+    ) {}
 
     /**
      * 조건에 맞는 후보를 찾아 MatchAttempt를 생성한다.
@@ -98,9 +102,15 @@ export class MatchingEngineService {
             matching.availableDates.map((d) => d.date.toISOString().slice(0, 10)),
         );
 
-        // 최근에 거절이 오간 상대는 다시 후보로 잡지 않는다.
+        // 후보에서 빼는 두 가지. 성격이 달라서 따로 모은다.
+        //   거절 - REJECTION_COOLDOWN_DAYS가 지나면 다시 후보가 된다
+        //   차단 - 기한이 없다. 쿨다운 조회에 섞으면 30일 뒤에 되살아난다
         // (거절당한 쪽은 페널티 없이 SEARCHING으로 돌아오기 때문에, 제외하지 않으면 방금 거절한 상대와 즉시 재매칭되는 문제가 생김)
-        const excludedUserIds = await this.findRecentlyRejectedUserIds(matching);
+        const [recentlyRejectedUserIds, blockedUserIds] = await Promise.all([
+            this.findRecentlyRejectedUserIds(matching),
+            this.blocks.findExcludedUserIds(matching.userId),
+        ]);
+        const excludedUserIds = [...recentlyRejectedUserIds, ...blockedUserIds];
 
         for (const stage of RELAX_STAGES) {
             const pool = await this.prisma.matching.findMany({

@@ -17,7 +17,7 @@ import {
   NotificationChannel,
 } from '../../generated/prisma/enums';
 import { daysUntil } from '../course-date.util';
-import { isUniqueViolation } from '../prisma-error.util';
+import { isUniqueViolation } from '../../common/prisma-error.util';
 import { CreateCourseReviewDto } from '../dto/request/create-course-review.dto';
 import {
   SPOT_REVIEW_DEFAULT_LIMIT,
