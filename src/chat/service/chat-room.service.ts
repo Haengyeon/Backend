@@ -106,6 +106,8 @@ export class ChatRoomService {
 
         return {
             id: chatRoom.id,
+            // 신고·차단 API가 이 값을 키로 받는다
+            matchAttemptId: chatRoom.matchAttemptId,
             status: chatRoom.status,
             openAt: chatRoom.openAt,
             travelDate: matchAttempt.travelDate,

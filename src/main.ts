@@ -42,7 +42,20 @@ async function bootstrap() {
 
   const config = new DocumentBuilder()
       .setTitle('행연 API')
-      .setDescription('행연 API 문서')
+      .setDescription(
+          [
+            '## 인증',
+            '',
+            '카카오 로그인 없이 시드 계정으로 바로 들어갈 수 있다.',
+            '',
+            '1. `POST /api/v1/auth/dev-token` 에 `{ "userId": "1" }` 로 요청',
+            '2. 응답의 `accessToken` 복사',
+            '3. 우측 상단 Authorize 버튼에 붙여넣기',
+            '',
+            '유효기간 1일. 다른 사람으로 바꾸려면 `userId`만 바꿔서 다시 발급받으면 된다.',
+            '`refreshToken`은 HttpOnly 쿠키로만 오가므로 Authorize에 넣지 않는다.',
+          ].join('\n'),
+      )
       .setVersion('1.0')
       .addTag('행연')
       .addBearerAuth()

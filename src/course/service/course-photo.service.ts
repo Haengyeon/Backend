@@ -15,7 +15,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { UPLOAD_DIR, toPublicUrl } from '../upload.config';
 import { CourseStatus } from '../../generated/prisma/enums';
 import { daysUntil } from '../course-date.util';
-import { isUniqueViolation } from '../prisma-error.util';
+import { isUniqueViolation } from '../../common/prisma-error.util';
 import { MissionPhotoResponseDto } from '../dto/response/course-progress-response.dto';
 import { CourseAccessService } from './course-access.service';
 import { CourseCompletionService } from './course-completion.service';

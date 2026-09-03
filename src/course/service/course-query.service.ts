@@ -115,6 +115,8 @@ export class CourseQueryService {
     const base: CourseDetailResponseDto = {
       viewType,
       id: course.id,
+      // 신고·차단 API가 이 값을 키로 받는다
+      matchAttemptId: course.matchAttemptId,
       region: course.region,
       regionLabel: REGION_LABEL[course.region],
       sigunguNames: visited.names,
@@ -250,6 +252,8 @@ export class CourseQueryService {
         generating: false,
         course: {
           id: course.id,
+          // 신고·차단 API가 이 값을 키로 받는다
+          matchAttemptId: course.matchAttemptId,
           title: course.title,
           region: course.region,
           regionLabel: REGION_LABEL[course.region],
@@ -338,6 +342,8 @@ export class CourseQueryService {
 
       return {
         id: course.id,
+        // 신고·차단 API가 이 값을 키로 받는다
+        matchAttemptId: course.matchAttemptId,
         title: course.title,
         region: course.region,
         regionLabel: REGION_LABEL[course.region],

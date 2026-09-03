@@ -50,6 +50,13 @@ export interface SlotSpec {
   distinctFromOrder?: number;
   /** 제목에 이 키워드가 있는 후보를 우선한다. 배제가 아니라 선호. */
   preferTitleKeywords?: string[];
+  /**
+   * 이 슬롯의 체류 시간(분). 없으면 DEFAULT_STAY_MINUTES.
+   *
+   * 밥 먹는 데 90분, 커피 마시는 데 90분을 잡으면 코스가 종일이 된다.
+   * 전시처럼 오래 머무는 곳과 카페를 같은 값으로 둘 수 없어서 슬롯이 정한다.
+   */
+  stayMinutes?: number;
 }
 
 export interface PlannedSpot {

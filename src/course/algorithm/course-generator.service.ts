@@ -9,7 +9,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CourseTheme, Hobby } from '../../generated/prisma/enums';
 import { intersectHobbies, selectTheme } from './theme-selection';
-import { isUniqueViolation } from '../prisma-error.util';
+import { isUniqueViolation } from '../../common/prisma-error.util';
 import { CoursePlanningError, buildCoursePlan } from './course-planner';
 import { templateFor } from './course-template';
 import {

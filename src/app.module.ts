@@ -10,6 +10,7 @@ import {MatchingModule} from './matching/matching.module';
 import {PaymentModule} from './payment/payment.module';
 import {NotificationModule} from './notification/notification.module';
 import {RewardModule} from './reward/reward.module';
+import {SafetyModule} from './safety/safety.module';
 import {ScheduleModule} from "@nestjs/schedule";
 
 @Module({
@@ -24,6 +25,7 @@ import {ScheduleModule} from "@nestjs/schedule";
         PaymentModule,
         NotificationModule,
         RewardModule,
+        SafetyModule,
     ],
     controllers: [AppController],
     providers: [AppService],
