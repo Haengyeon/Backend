@@ -1,7 +1,7 @@
 // 코스 자동 생성 알고리즘 전체적으로 돌아가는 곳
 // 순수 계산/판단/조합만 하는 함수들
 import { CourseTheme, Hobby } from '../../generated/prisma/enums';
-import { SPOT_COUNT } from './course-template';
+import { SPOT_COUNT, templateFor } from './course-template';
 import { estimateMoveMinutes, haversineKm } from './geo';
 import { buildMission } from './mission-text';
 import { selectCourse } from './spot-selection';
@@ -58,6 +58,10 @@ export function buildCoursePlan(
     );
   }
 
+  // 슬롯마다 체류시간이 다르다(카페 50분, 전시 90분). 선정 결과에는 그 값이
+  // 실려 오지 않으므로 템플릿을 순서로 다시 맞춰 읽는다.
+  const template = templateFor(params.theme);
+
   const spots: PlannedSpot[] = course.spots.map((item, index) => {
     const previous = index > 0 ? course.spots[index - 1].spot : null;
     const distanceKm = previous ? haversineKm(previous, item.spot) : null;
@@ -68,7 +72,7 @@ export function buildCoursePlan(
       spot: item.spot,
       //각 스팟마다 미션 생성
       mission: buildMission(item.spot),
-      stayMinutes: DEFAULT_STAY_MINUTES,
+      stayMinutes: template[index]?.stayMinutes ?? DEFAULT_STAY_MINUTES,
       moveMinutesFromPrevious:
         distanceKm === null ? null : estimateMoveMinutes(distanceKm),
       distanceKmFromPrevious: distanceKm,

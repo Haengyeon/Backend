@@ -2,6 +2,7 @@ import { CourseTheme, Hobby, Region } from '../../generated/prisma/enums';
 import { affinityOf } from './affinity';
 import {
   CoursePlanningError,
+  DEFAULT_STAY_MINUTES,
   buildCoursePlan,
   resolveTheme,
 } from './course-planner';
@@ -126,50 +127,55 @@ describe('STEP 2 - 테마 구성 (놀 곳 중심)', () => {
     }
   });
 
-  it('로컬맛집·사진명소를 뺀 테마에는 식사·카페 슬롯이 없다', () => {
-    for (const theme of PURE_THEMES) {
+  // 예전에는 로컬맛집·사진명소만 밥과 카페를 갖고 나머지 6개 테마는 활동 4칸이었다.
+  // 그 코스는 90분짜리 활동을 네 번 연달아 하는 일정이라 앉을 자리도 대화할 자리도
+  // 없었다. 이제는 테마와 상관없이 2번이 밥, 3번이 카페다.
+  it('모든 테마가 식사와 카페를 한 칸씩 갖는다', () => {
+    for (const theme of Object.values(CourseTheme)) {
+      const codes = COURSE_TEMPLATE[theme].flatMap((_, i) => codesOf(theme, i));
+      expect(codes).toContain('FD05'); // 카페
+      expect(codes.some((c) => c.startsWith('FD') && c !== 'FD05')).toBe(true); // 식사
+    }
+  });
+
+  it('식사와 카페는 활동보다 짧게 머문다', () => {
+    for (const theme of Object.values(CourseTheme)) {
       for (const slot of COURSE_TEMPLATE[theme]) {
-        const hasFood = slot.filter.categories?.some(
+        const isFood = slot.filter.categories?.some(
           (g) => g.lclsSystm1 === 'FD',
         );
-        expect(hasFood).toBeFalsy();
+        if (isFood) {
+          // 밥 먹는 데 90분(DEFAULT_STAY_MINUTES)을 잡으면 코스가 종일이 된다
+          expect(slot.stayMinutes).toBeLessThan(DEFAULT_STAY_MINUTES);
+        }
       }
     }
   });
 
-  it('로컬맛집과 사진명소만 식사·카페를 유지한다', () => {
-    for (const theme of WITH_MEALS) {
-      const codes = COURSE_TEMPLATE[theme].flatMap((_, i) => codesOf(theme, i));
-      expect(codes).toContain('FD05'); // 카페
-    }
-  });
-
-  it('자연힐링·걷기여행은 4칸 모두 자연·공원이다', () => {
+  it('자연힐링·걷기여행은 1번과 4번이 자연·공원이고 4번은 노을을 우선한다', () => {
     for (const theme of [
       CourseTheme.NATURE_HEALING,
       CourseTheme.WALKING_TRIP,
     ]) {
       const template = COURSE_TEMPLATE[theme];
-      for (const slot of template) {
-        expect(slot.filter.categories?.map((g) => g.lclsSystm1)).toEqual([
-          'NA',
-          'VE',
-        ]);
+      for (const index of [0, 3]) {
+        expect(
+          template[index].filter.categories?.map((g) => g.lclsSystm1),
+        ).toEqual(['NA', 'VE']);
       }
       expect(template[3].preferTitleKeywords).toContain('노을');
     }
   });
 
-  it('같은 역할이 반복되는 테마는 직전 칸과 중분류를 다르게 한다', () => {
+  // 활동 칸이 1번과 4번 둘뿐이라, 4번이 1번과 겹치지만 않으면 된다.
+  // (예전에는 2·3번도 활동이라 연쇄로 서로 달라야 했다)
+  it('활동이 두 번 나오는 테마는 4번이 1번과 중분류가 달라야 한다', () => {
     for (const theme of [
       CourseTheme.NATURE_HEALING,
       CourseTheme.WALKING_TRIP,
       CourseTheme.ACTIVITY,
     ]) {
-      const template = COURSE_TEMPLATE[theme];
-      expect(template[1].distinctFromOrder).toBe(1);
-      expect(template[2].distinctFromOrder).toBe(2);
-      expect(template[3].distinctFromOrder).toBe(3);
+      expect(COURSE_TEMPLATE[theme][3].distinctFromOrder).toBe(1);
     }
   });
 
@@ -189,16 +195,16 @@ describe('STEP 2 - 테마 구성 (놀 곳 중심)', () => {
     ]);
   });
 
-  it('예술감성은 예술 3칸 + 공방·체험 1칸이다', () => {
+  it('예술감성은 예술 1칸 + 공방·체험 1칸이다', () => {
     const template = COURSE_TEMPLATE[CourseTheme.ART_SENSIBILITY];
     expect(codesOf(CourseTheme.ART_SENSIBILITY, 0)).toEqual(['VE06', 'VE07']);
     expect(template[3].role).toBe('공방·체험');
     expect(codesOf(CourseTheme.ART_SENSIBILITY, 3)).not.toContain('EX05');
   });
 
-  it('액티비티는 4칸 모두 레저이고 항공(LS03)은 제외한다', () => {
-    for (let i = 0; i < SPOT_COUNT; i++) {
-      expect(codesOf(CourseTheme.ACTIVITY, i)).toEqual([
+  it('액티비티는 1번과 4번이 레저이고 항공(LS03)은 제외한다', () => {
+    for (const index of [0, 3]) {
+      expect(codesOf(CourseTheme.ACTIVITY, index)).toEqual([
         'LS01',
         'LS02',
         'LS04',
@@ -582,10 +588,11 @@ describe('섬끼리 묶이지 않는다', () => {
 
 describe('STEP 3 - 앵커 기반 선정', () => {
   // 자연힐링 템플릿용 기본 풀: 앵커 근처에 역할별 후보가 다 있는 상태
+  // 2·3번이 밥과 카페 자리라 자연 장소만으로는 코스를 채울 수 없다
   const compactPool = [
     nature('n1', 'NA02', 0),
-    nature('n2', 'NA03', 0.5),
-    nature('n3', 'NA04', 0.8),
+    meal('food', 'FD01', 0.5),
+    meal('cafe', 'FD05', 0.8),
     nature('n4', 'NA05', 1.2),
   ];
 
@@ -598,8 +605,8 @@ describe('STEP 3 - 앵커 기반 선정', () => {
 
     expect(course.spots.map((s) => s.role)).toEqual([
       '자연·공원',
-      '자연·공원',
-      '자연·공원',
+      '점심',
+      '카페',
       '노을·자연',
     ]);
     expect(new Set(course.spots.map((s) => s.spot.contentId)).size).toBe(4);
@@ -622,22 +629,22 @@ describe('STEP 3 - 앵커 기반 선정', () => {
     expect(ids).not.toContain('far');
   });
 
-  it('연속한 칸은 중분류가 다른 후보를 우선한다', () => {
+  // 자연 칸이 1번과 4번뿐이라(2·3번은 밥·카페) 그 둘의 중분류가 달라야 한다.
+  // 같은 중분류만 있으면 다음 테스트처럼 같은 걸로 대체한다.
+  it('자연 두 칸은 서로 중분류가 다른 후보를 우선한다', () => {
     const pool = [
       nature('anchor', 'NA02', 0),
       nature('same-sub', 'NA02', 0.3), // 앵커와 같은 중분류
       nature('diff-a', 'NA03', 0.5),
-      nature('diff-b', 'NA04', 0.7),
-      nature('diff-c', 'NA05', 0.9),
+      meal('food', 'FD01', 0.6),
+      meal('cafe', 'FD05', 0.7),
     ];
 
     const course = selectCourse(pool, CourseTheme.NATURE_HEALING, 'seed');
-    const subs = course.spots.map((s) => s.spot.lclsSystm2);
 
-    // 연속한 칸끼리 중분류가 겹치지 않는다
-    for (let i = 1; i < subs.length; i++) {
-      expect(subs[i]).not.toBe(subs[i - 1]);
-    }
+    expect(course.spots[3].spot.lclsSystm2).not.toBe(
+      course.spots[0].spot.lclsSystm2,
+    );
   });
 
   it('다른 중분류가 없으면 같은 중분류의 다른 장소로 대체한다', () => {
@@ -792,8 +799,8 @@ describe('STEP 4 - 전체 경로 최적화 (지그재그 방지)', () => {
     const pool = [
       at('park', 0, 'NA04', 'NA'),
       at('tower', 0.1, 'VE01', 'VE'), // 앵커 바로 옆이지만 4번 자리
-      at('walk1', 0.4, 'VE03', 'VE'),
-      at('walk2', 0.8, 'NA05', 'NA'),
+      at('cafe', 0.4, 'FD05', 'FD'),
+      at('dinner', 0.8, 'FD01', 'FD'),
     ];
 
     const course = selectCourse(pool, CourseTheme.NIGHT_DATE, 'seed');
@@ -940,8 +947,8 @@ describe('거리 계산', () => {
 describe('전체 플랜 (buildCoursePlan)', () => {
   const pool = [
     nature('n1', 'NA02', 0),
-    nature('n2', 'NA03', 0.4),
-    nature('n3', 'NA04', 0.6),
+    meal('food', 'FD01', 0.4),
+    meal('cafe', 'FD05', 0.6),
     nature('n4', 'NA05', 1.0),
   ];
 
@@ -955,7 +962,9 @@ describe('전체 플랜 (buildCoursePlan)', () => {
     expect(plan.spots.map((s) => s.order)).toEqual([1, 2, 3, 4]);
     expect(plan.spots[0].moveMinutesFromPrevious).toBeNull();
     expect(plan.spots[1].moveMinutesFromPrevious).toBeGreaterThan(0);
-    expect(plan.durationMinutes).toBeGreaterThanOrEqual(4 * 90);
+    // 자연 90 + 점심 60 + 카페 50 + 자연 90 = 290. 여기에 이동시간이 붙는다.
+    // 예전에는 90 x 4 = 360이었다 — 밥도 커피도 90분씩 잡던 시절이다.
+    expect(plan.durationMinutes).toBeGreaterThanOrEqual(290);
     expect(plan.totalDistanceKm).toBeGreaterThan(0);
   });
 

@@ -158,27 +158,42 @@ const LEISURE: SpotFilter = {
 // 시간 의미가 남는 칸만 자리를 지킨다 - 실내 전시는 폐관 전(오전), 야경은 해 진 뒤.
 
 export const COURSE_TEMPLATE: Record<CourseTheme, SlotSpec[]> = {
-  // 자연·공원 4곳. 마지막은 노을 볼 만한 곳 우선.
+  // 어느 테마든 2번은 점심, 3번은 카페다.
+  //
+  // 처음에는 테마 장소로 4곳을 다 채웠는데, 그러면 90분짜리 활동을 네 번 연달아
+  // 하는 코스가 나온다. 단양 걷기 코스가 "갈대숲 90분 -> 이동 -> 돌리네 90분 ->
+  // 이동 -> 잔도 90분 -> 이동 -> 스카이워크 90분"이었다. 6시간 넘게 야외에 있으면서
+  // 앉을 데도 밥 먹을 데도 없다. 처음 만나는 두 사람이 할 수 있는 코스가 아니다.
+  //
+  // 밥과 카페가 끼면 두 가지가 같이 해결된다.
+  //   - 체력: 활동 사이에 앉아서 쉬는 구간이 생긴다
+  //   - 대화: 처음 만난 사이에 마주보고 이야기할 자리가 생긴다. 걷기만 해서는 안 된다.
+  //
+  // 테마 장소가 4곳에서 2곳으로 준다. 대신 그 2곳은 후보가 넉넉할 때 고르는
+  // 자리라 질이 올라간다. 지방에서 같은 카테고리 3곳을 근거리에서 찾다가
+  // 컨벤션센터나 교육청 체험관까지 긁어오던 문제도 같이 사라진다.
+  //
+  // PHOTO_SPOT과 LOCAL_FOOD_MARKET은 원래 이 모양이었다. 나머지를 여기 맞췄다.
   [CourseTheme.NATURE_HEALING]: [
     { role: '자연·공원', filter: NATURE_WALK },
-    { role: '자연·공원', filter: NATURE_WALK, distinctFromOrder: 1 },
-    { role: '자연·공원', filter: NATURE_WALK, distinctFromOrder: 2 },
+    { role: '점심', filter: MEAL, stayMinutes: 60 },
+    { role: '카페', filter: CAFE, stayMinutes: 50 },
     {
       role: '노을·자연',
       filter: NATURE_WALK,
-      distinctFromOrder: 3,
+      distinctFromOrder: 1,
       preferTitleKeywords: SUNSET_KEYWORDS,
     },
   ],
 
   [CourseTheme.WALKING_TRIP]: [
     { role: '걷기·공원', filter: NATURE_WALK },
-    { role: '걷기·공원', filter: NATURE_WALK, distinctFromOrder: 1 },
-    { role: '걷기·공원', filter: NATURE_WALK, distinctFromOrder: 2 },
+    { role: '점심', filter: MEAL, stayMinutes: 60 },
+    { role: '카페', filter: CAFE, stayMinutes: 50 },
     {
       role: '노을·산책',
       filter: NATURE_WALK,
-      distinctFromOrder: 3,
+      distinctFromOrder: 1,
       preferTitleKeywords: SUNSET_KEYWORDS,
     },
   ],
@@ -186,38 +201,38 @@ export const COURSE_TEMPLATE: Record<CourseTheme, SlotSpec[]> = {
   // 실내 전시는 폐관 전에 가도록 오전 고정, 야외는 뒤로.
   [CourseTheme.HISTORY_CULTURE]: [
     { role: '실내 역사·전시', filter: INDOOR_HISTORY },
-    { role: '역사', filter: HISTORY_ALL, distinctFromOrder: 1 },
-    { role: '역사', filter: HISTORY_ALL, distinctFromOrder: 2 },
+    { role: '점심', filter: MEAL, stayMinutes: 60 },
+    { role: '카페', filter: CAFE, stayMinutes: 50 },
     { role: '야외 고궁·역사공원', filter: OUTDOOR_HISTORY },
   ],
 
   [CourseTheme.ART_SENSIBILITY]: [
     { role: '예술·전시', filter: ART },
-    { role: '예술·전시', filter: ART, distinctFromOrder: 1 },
-    { role: '예술·전시', filter: ART, distinctFromOrder: 2 },
+    { role: '점심', filter: MEAL, stayMinutes: 60 },
+    { role: '카페', filter: CAFE, stayMinutes: 50 },
     { role: '공방·체험', filter: CRAFT_EXPERIENCE },
   ],
 
+  // 레저는 체력을 제일 많이 쓴다. 쉬는 구간이 더 필요하지 덜 필요하지 않다.
   [CourseTheme.ACTIVITY]: [
     { role: '레저', filter: LEISURE },
+    { role: '점심', filter: MEAL, stayMinutes: 60 },
+    { role: '카페', filter: CAFE, stayMinutes: 50 },
     { role: '레저', filter: LEISURE, distinctFromOrder: 1 },
-    { role: '레저', filter: LEISURE, distinctFromOrder: 2 },
-    { role: '레저', filter: LEISURE, distinctFromOrder: 3 },
   ],
 
-  // 야경은 해 진 뒤여야 하므로 4번 고정.
+  // 야경은 해 진 뒤여야 하므로 4번 고정. 그 앞이 저녁 자리가 된다.
   [CourseTheme.NIGHT_DATE]: [
     { role: '산책·공원', filter: PARK_WALK },
-    { role: '산책·전시', filter: LIGHT_EXHIBIT_WALK, distinctFromOrder: 1 },
-    { role: '산책·전시', filter: LIGHT_EXHIBIT_WALK, distinctFromOrder: 2 },
+    { role: '카페', filter: CAFE, stayMinutes: 50 },
+    { role: '저녁', filter: MEAL, stayMinutes: 60 },
     { role: '야경', filter: NIGHT_VIEW },
   ],
 
-  // 아래 둘은 식사·카페를 유지한다.
   [CourseTheme.PHOTO_SPOT]: [
     { role: '사진명소', filter: PHOTO },
-    { role: '점심(외국식)', filter: FOREIGN_MEAL },
-    { role: '카페', filter: CAFE },
+    { role: '점심(외국식)', filter: FOREIGN_MEAL, stayMinutes: 60 },
+    { role: '카페', filter: CAFE, stayMinutes: 50 },
     {
       role: '야경 사진명소',
       filter: PHOTO,
@@ -227,9 +242,9 @@ export const COURSE_TEMPLATE: Record<CourseTheme, SlotSpec[]> = {
 
   [CourseTheme.LOCAL_FOOD_MARKET]: [
     { role: '시장 구경', filter: MARKET },
-    { role: '점심 맛집', filter: MEAL },
-    { role: '카페', filter: CAFE },
-    { role: '저녁 맛집', filter: MEAL, distinctFromOrder: 2 },
+    { role: '점심 맛집', filter: MEAL, stayMinutes: 60 },
+    { role: '카페', filter: CAFE, stayMinutes: 50 },
+    { role: '저녁 맛집', filter: MEAL, distinctFromOrder: 2, stayMinutes: 60 },
   ],
 };
 
