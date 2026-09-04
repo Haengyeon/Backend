@@ -11,8 +11,8 @@ import {KakaoPayClient} from "./kakao-pay.client";
 import {MatchAttemptStatus, MatchingStatus, PaymentStatus} from "../../generated/prisma/enums";
 import { CourseGeneratorService } from '../../course/algorithm/course-generator.service';
 import {ChatRoomService} from "../../chat/service/chat-room.service";
+import { MATCHING_PAYMENT_AMOUNT } from "../../common/payment.constant";
 
-const PAYMENT_AMOUNT = 25_000; //1인당 결제 금액
 const ITEM_NAME = '행연 참가비';
 
 @Injectable()
@@ -24,7 +24,7 @@ export class PaymentService {
       private readonly kakaoPay: KakaoPayClient,
       private readonly courseGenerator: CourseGeneratorService,
       private readonly chatRoom: ChatRoomService,
-) {}
+  ) {}
 
   //결제준비: 카카오에 tid 발급받고 결제창 url 반환
   async ready(userId: string,  matchAttemptId: string) {
@@ -46,7 +46,7 @@ export class PaymentService {
           data: {
             matchAttemptId,
             userId,
-            amount: PAYMENT_AMOUNT,
+            amount: MATCHING_PAYMENT_AMOUNT,
             status: PaymentStatus.READY,
           },
         });
@@ -54,7 +54,7 @@ export class PaymentService {
       partnerOrderId: payment.id,
       partnerUserId: userId,
       itemName: ITEM_NAME,
-      totalAmount: PAYMENT_AMOUNT,
+      totalAmount: MATCHING_PAYMENT_AMOUNT,
       approvalUrl: this.buildRedirectUrl('APPROVAL', payment.id),
       cancelUrl: this.buildRedirectUrl('CANCEL', payment.id),
       failUrl: this.buildRedirectUrl('FAIL', payment.id),
@@ -173,10 +173,10 @@ export class PaymentService {
     // TourAPI 호출이 섞여 있어 시간이 걸리므로 결제 응답을 막지 않고 던져 둔다.
     // 실패하면 코스 없이 지나가므로 POST /api/v1/courses/regenerate로 다시 시도한다.
     this.courseGenerator
-      .generateForMatchAttempt(matchAttemptId)
-      .catch((error) =>
-        this.logger.error('매칭 확정 후 코스 생성 중 오류', error as Error),
-      );
+        .generateForMatchAttempt(matchAttemptId)
+        .catch((error) =>
+            this.logger.error('매칭 확정 후 코스 생성 중 오류', error as Error),
+        );
 
     return true;
   }

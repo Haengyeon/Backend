@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Transform, Type } from 'class-transformer';
 
 import {
+    CourseTheme,
     Gender,
     Hobby,
     JobCategory,
@@ -10,7 +11,6 @@ import {
 
 /**
  * 수락/거절 판단에 필요한 상대 정보.
- * 실명(name)과 생년월일(birthDate)은 개인정보라 절대 노출하지 않는다.
  * (나이는 서버에서 만나이로 계산해서 내려준다)
  */
 export class PartnerProfileDto {
@@ -66,6 +66,20 @@ export class MatchAttemptDetailResponseDto {
         value instanceof Date ? value.toISOString().slice(0, 10) : value,
     )
     travelDate: string;
+
+    @ApiProperty({
+        enum: CourseTheme,
+        description: '두 사람의 조건으로 확정된 코스 테마',
+    })
+    @Expose()
+    theme: CourseTheme;
+
+    @ApiProperty({
+        example: 25000,
+        description: '수락 시 1인당 결제해야 하는 금액(원)',
+    })
+    @Expose()
+    paymentAmount: number;
 
     @ApiProperty({ nullable: true })
     @Expose()
