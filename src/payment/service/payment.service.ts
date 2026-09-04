@@ -126,6 +126,102 @@ export class PaymentService {
     };
   }
 
+  /**
+   * 사용자가 직접 결제를 취소한다.
+   * 매칭이 확정(CONFIRMED)되기 전까지만 허용한다.
+   * 확정 후에는 채팅방과 코스가 이미 만들어져 있어 되돌리는 범위가 커지기 때문이다.
+   *
+   * 취소하면 이 사용자는 '미결제' 상태가 되므로, 결제 마감 스케줄러가
+   * 마감 시각에 미결제자로 보고 페널티를 적용하고 상대는 재탐색으로 돌려보낸다.
+   */
+  async cancel(userId: string, paymentId: string) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: { matchAttempt: { select: { status: true } } },
+    });
+
+    if (!payment) {
+      throw new NotFoundException('결제 정보를 찾을 수 없습니다.');
+    }
+
+    if (payment.userId !== userId) {
+      throw new ForbiddenException('해당 결제에 대한 권한이 없습니다.');
+    }
+
+    if (payment.status !== PaymentStatus.APPROVED) {
+      throw new ConflictException('취소할 수 있는 결제가 아닙니다.');
+    }
+
+    if (payment.matchAttempt.status !== MatchAttemptStatus.PAYMENT_PENDING) {
+      throw new ConflictException(
+          '이미 확정된 매칭은 결제를 취소할 수 없습니다.',
+      );
+    }
+
+    await this.refund(paymentId);
+
+    return { paymentId, status: PaymentStatus.CANCELLED };
+  }
+
+  /**
+   * 결제를 환불 처리한다. 카카오 취소 API를 호출하고 상태를 CANCELLED로 바꾼다.
+   *
+   * 결제 마감 스케줄러에서도 호출한다.
+   * (한쪽만 결제한 채로 마감되면 결제한 쪽 돈이 묶이므로 자동으로 돌려줘야 한다)
+   *
+   * 이미 CANCELLED이거나 승인되지 않은 결제는 조용히 넘어간다.
+   * 스케줄러가 같은 건을 여러 번 처리하더라도 문제가 없도록 하기 위함이다.
+   */
+  async refund(paymentId: string): Promise<boolean> {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+    });
+
+    if (!payment) return false;
+    if (payment.status !== PaymentStatus.APPROVED) return false;
+    if (!payment.kakaoPayTid) return false;
+
+    await this.kakaoPay.cancel({
+      tid: payment.kakaoPayTid,
+      cancelAmount: payment.amount,
+    });
+
+    await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: PaymentStatus.CANCELLED,
+        cancelledAt: new Date(),
+      },
+    });
+
+    this.logger.log(`결제 환불: payment=${payment.id}`);
+
+    return true;
+  }
+
+  /**
+   * 특정 매칭 시도에 대해 승인된 결제를 모두 환불한다.
+   * 결제 마감 스케줄러가 호출한다.
+   */
+  async refundAllForAttempt(matchAttemptId: string): Promise<void> {
+    const payments = await this.prisma.payment.findMany({
+      where: { matchAttemptId, status: PaymentStatus.APPROVED },
+      select: { id: true },
+    });
+
+    for (const payment of payments) {
+      try {
+        await this.refund(payment.id);
+      } catch (error) {
+        // 한 건이 실패해도 나머지는 계속 시도한다
+        this.logger.error(
+            `결제 환불 실패: payment=${payment.id}`,
+            error as Error,
+        );
+      }
+    }
+  }
+
   // 양쪽 모두 결제 마치면 매칭 확정
   private async confirmIfBothPaid(matchAttemptId: string): Promise<boolean> {
     const attempt = await this.prisma.matchAttempt.findUniqueOrThrow({

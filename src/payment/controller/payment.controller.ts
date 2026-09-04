@@ -1,5 +1,6 @@
 import {
   Body,
+  Param,
   Controller,
   Post,
 } from '@nestjs/common';
@@ -8,6 +9,7 @@ import {
   ApiBearerAuth,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
 
@@ -17,6 +19,7 @@ import { ReadyPaymentDto } from '../dto/request/ready-payment.dto';
 import { ApprovePaymentDto } from '../dto/request/approve-payment.dto';
 import { PaymentReadyResponseDto } from '../dto/response/payment-ready-response.dto';
 import { PaymentApproveResponseDto } from '../dto/response/payment-approve-response.dto';
+import { PaymentCancelResponseDto } from '../dto/response/payment-cancel-response.dto';
 import { PaymentService } from '../service/payment.service';
 import { CurrentUser } from '../../auth/current-user.decorator';
 
@@ -61,6 +64,26 @@ export class PaymentController {
     );
 
     return plainToInstance(PaymentApproveResponseDto, result, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  @Post(':paymentId/cancel')
+  @ApiOperation({
+    summary: '결제 취소',
+    description:
+        '매칭이 확정되기 전까지만 취소할 수 있다. ' +
+        '취소하면 미결제 상태가 되므로, 결제 마감 시각에 미결제자로 처리된다.',
+  })
+  @ApiOkResponse({ type: PaymentCancelResponseDto })
+  @ApiParam({ name: 'paymentId' })
+  async cancel(
+      @CurrentUser() userId: string,
+      @Param('paymentId') paymentId: string,
+  ): Promise<PaymentCancelResponseDto> {
+    const result = await this.paymentService.cancel(userId, paymentId);
+
+    return plainToInstance(PaymentCancelResponseDto, result, {
       excludeExtraneousValues: true,
     });
   }

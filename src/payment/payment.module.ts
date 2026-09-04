@@ -12,5 +12,7 @@ import {ChatModule} from "../chat/chat.module";
   imports: [ChatModule,CourseModule],
   controllers: [PaymentController],
   providers: [PaymentService, KakaoPayClient],
+  // 결제 마감 스케줄러(매칭 도메인)에서 환불을 호출한다
+  exports: [PaymentService],
 })
 export class PaymentModule {}

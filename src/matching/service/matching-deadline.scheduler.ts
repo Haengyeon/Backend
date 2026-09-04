@@ -8,6 +8,7 @@ import {
 } from '../../generated/prisma/enums';
 import { MatchingEngineService } from './matching-engine.service';
 import { MatchingPenaltyService } from './matching-penalty.service';
+import { PaymentService } from '../../payment/service/payment.service';
 
 @Injectable()
 export class MatchingDeadlineScheduler {
@@ -17,6 +18,7 @@ export class MatchingDeadlineScheduler {
         private readonly prisma: PrismaService,
         private readonly penalty: MatchingPenaltyService,
         private readonly matchingEngine: MatchingEngineService,
+        private readonly payment: PaymentService,
     ) {}
 
     /**
@@ -117,6 +119,11 @@ export class MatchingDeadlineScheduler {
                 });
 
                 this.requeue(requeueIds);
+
+                // 한쪽만 결제한 채 마감되면 결제한 쪽 돈이 묶이므로 되돌려준다.
+                // 트랜잭션 밖에서 처리한다 (외부 API 호출이라 실패해도 마감 처리는 유지되어야 함)
+                await this.payment.refundAllForAttempt(attempt.id);
+
                 this.logger.log(`결제 시간초과 처리: attempt=${attempt.id}`);
             } catch (error) {
                 this.logger.error(
