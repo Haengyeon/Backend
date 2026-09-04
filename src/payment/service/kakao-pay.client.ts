@@ -12,6 +12,15 @@ export interface KakaoPayReadyResult {
     created_at: string;
 }
 
+export interface KakaoPayAmount {
+    total: number;
+    tax_free: number;
+    vat: number;
+    point: number;
+    discount: number;
+    green_deposit: number;
+}
+
 export interface KakaoPayApproveResult {
     aid: string;
     tid: string;
@@ -21,16 +30,29 @@ export interface KakaoPayApproveResult {
     payment_method_type: 'CARD' | 'MONEY';
     item_name: string;
     quantity: number;
-    amount: {
-        total: number;
-        tax_free: number;
-        vat: number;
-        point: number;
-        discount: number;
-        green_deposit: number;
-    };
+    amount: KakaoPayAmount;
     created_at: string;
     approved_at: string;
+}
+
+export interface KakaoPayCancelResult {
+    aid: string;
+    tid: string;
+    cid: string;
+    /** 전액 취소 성공 시 CANCEL_PAYMENT */
+    status: string;
+    partner_order_id: string;
+    partner_user_id: string;
+    amount: KakaoPayAmount;
+    /** 이번 요청으로 취소된 금액 */
+    approved_cancel_amount: KakaoPayAmount;
+    /** 누계 취소 금액 */
+    canceled_amount: KakaoPayAmount;
+    /** 남은 취소 가능 금액 */
+    cancel_available_amount: KakaoPayAmount;
+    created_at: string;
+    approved_at: string;
+    canceled_at: string;
 }
 
 interface KakaoPayErrorBody {
@@ -103,6 +125,25 @@ export class KakaoPayClient {
             partner_order_id: params.partnerOrderId,
             partner_user_id: params.partnerUserId,
             pg_token: params.pgToken,
+        });
+    }
+
+    /**
+     * 결제 취소(환불).
+     * 전액 취소만 사용한다.
+     * cancel_vat_amount는 보내지 않는다.
+     * 생략하면 (취소 금액 - 취소 비과세 금액)/11로 자동 계산되는데,
+     * 결제 시에도 vat_amount 없이 같은 식으로 계산됐으므로 값이 일치한다.
+     */
+    async cancel(params: {
+        tid: string;
+        cancelAmount: number;
+    }): Promise<KakaoPayCancelResult> {
+        return this.request<KakaoPayCancelResult>('/cancel', {
+            cid: this.cid,
+            tid: params.tid,
+            cancel_amount: params.cancelAmount,
+            cancel_tax_free_amount: 0,
         });
     }
 

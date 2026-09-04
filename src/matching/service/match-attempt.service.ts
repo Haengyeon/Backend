@@ -17,6 +17,7 @@ import { MatchAttemptDto } from '../dto/request/match-attempt.dto';
 import { MatchingEngineService } from './matching-engine.service';
 import { MatchingPenaltyService } from './matching-penalty.service';
 import {calcAge} from "../../common/age.util";
+import { MATCHING_PAYMENT_AMOUNT } from "../../common/payment.constant";
 
 const PAYMENT_WINDOW_MS = 6 * 60 * 60 * 1000; // 결제 유예 6시간
 
@@ -68,6 +69,8 @@ export class MatchAttemptService {
             id: attempt.id,
             status: attempt.status,
             travelDate: attempt.travelDate,
+            theme: attempt.theme,
+            paymentAmount: MATCHING_PAYMENT_AMOUNT,
             paymentDeadlineAt: attempt.paymentDeadlineAt,
 
             myResponded: Boolean(myResponse),
