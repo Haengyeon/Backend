@@ -130,6 +130,81 @@ export class ChatRoomService {
     }
 
     /**
+     * 내 채팅방 목록.
+     * 활성 방(LOCKED/OPEN)뿐 아니라 종료·차단된 방까지 모두 최신순으로 돌려줌
+     * 목록에서는 상대 이름과 사진만 필요하므로 프로필 전체를 담지 않음.
+     */
+    async findMine(userId: string) {
+        const chatRooms = await this.prisma.chatRoom.findMany({
+            where: {
+                matchAttempt: {
+                    OR: [
+                        { matchingA: { userId } },
+                        { matchingB: { userId } },
+                    ],
+                },
+            },
+            orderBy: { createdAt: 'desc' },
+            include: {
+                matchAttempt: {
+                    include: {
+                        matchingA: {
+                            select: {
+                                userId: true,
+                                user: { select: { profile: true } },
+                            },
+                        },
+                        matchingB: {
+                            select: {
+                                userId: true,
+                                user: { select: { profile: true } },
+                            },
+                        },
+                    },
+                },
+                messageCounts: {
+                    where: { userId },
+                    select: { usedCount: true },
+                },
+                messages: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1,
+                    select: { content: true, createdAt: true },
+                },
+            },
+        });
+
+        const rooms = chatRooms.map((chatRoom) => {
+            const { matchAttempt } = chatRoom;
+            const isSideA = matchAttempt.matchingA.userId === userId;
+            const partnerProfile = (
+                isSideA ? matchAttempt.matchingB : matchAttempt.matchingA
+            ).user.profile;
+
+            const usedCount = chatRoom.messageCounts.at(0)?.usedCount ?? 0;
+            const lastMessage = chatRoom.messages.at(0);
+
+            return {
+                id: chatRoom.id,
+                matchAttemptId: chatRoom.matchAttemptId,
+                status: chatRoom.status,
+                openAt: chatRoom.openAt,
+                travelDate: matchAttempt.travelDate,
+                myRemainingCount: MESSAGE_LIMIT_PER_USER - usedCount,
+
+                // 탈퇴 등으로 프로필이 사라졌을 경우
+                partnerName: partnerProfile?.name ?? '알 수 없음',
+                partnerProfileImageUrl: partnerProfile?.profileImageUrl ?? '',
+
+                lastMessageContent: lastMessage?.content ?? null,
+                lastMessageAt: lastMessage?.createdAt ?? null,
+            };
+        });
+
+        return { rooms };
+    }
+
+    /**
      * 채팅방 개방 시각 = 여행 전날 00:00 (KST).
      *
      * travelDate는 @db.Date라 UTC 자정으로 저장돼 있다.
