@@ -119,7 +119,7 @@ export class CourseReviewService {
         await tx.notificationLog.create({
           data: {
             userId: partnerId,
-            channel: NotificationChannel.WEB_PUSH,
+            channel: NotificationChannel.KAKAO,
             type: 'PARTNER_REVIEW',
             status: 'PENDING',
           },

@@ -10,7 +10,6 @@ import { CourseScheduleService } from './service/course-schedule.service';
 import { CourseRecommendService } from './service/course-recommend.service';
 import { CourseGeneratorService } from './algorithm/course-generator.service';
 import { TourApiClient } from './algorithm/tour-api.client';
-import {CourseReminderScheduler} from "./service/course-reminder.scheduler";
 
 @Module({
   controllers: [CourseController],
@@ -25,7 +24,6 @@ import {CourseReminderScheduler} from "./service/course-reminder.scheduler";
     CourseRecommendService,
     CourseGeneratorService,
     TourApiClient,
-    CourseReminderScheduler,
   ],
   exports: [CourseGeneratorService],
 })

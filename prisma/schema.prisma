@@ -145,7 +145,6 @@ model User {
   // Notification
   notificationSetting NotificationSetting?
   notificationLogs    NotificationLog[]
-  pushTokens          PushToken[]
 
   // Reward
   pointAccount PointAccount?
@@ -897,7 +896,7 @@ model NotificationSetting {
   id     String @id @default(uuid())
   userId String @unique
 
-  pushEnabled Boolean @default(true)
+  kakaoEnabled Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -906,7 +905,7 @@ model NotificationSetting {
 }
 
 enum NotificationChannel {
-  WEB_PUSH
+  KAKAO
 }
 
 model NotificationLog {
@@ -928,21 +927,6 @@ model NotificationLog {
   status String
 
   sentAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
-
-  @@index([userId])
-}
-
-// FCM 등록 토큰.
-// 브라우저·기기마다 다르게 발급되므로 사용자당 여러 개일 수 있다.
-model PushToken {
-  id     String @id @default(uuid())
-  userId String
-  token  String @unique
-
-  createdAt  DateTime @default(now())
-  lastUsedAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
 
