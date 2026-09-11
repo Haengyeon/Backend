@@ -9,6 +9,10 @@ import {
 import { MatchingEngineService } from './matching-engine.service';
 import { MatchingPenaltyService } from './matching-penalty.service';
 import { PaymentService } from '../../payment/service/payment.service';
+import {
+    NotificationService,
+    NotificationType,
+} from '../../notification/service/notification.service';
 
 @Injectable()
 export class MatchingDeadlineScheduler {
@@ -19,6 +23,7 @@ export class MatchingDeadlineScheduler {
         private readonly penalty: MatchingPenaltyService,
         private readonly matchingEngine: MatchingEngineService,
         private readonly payment: PaymentService,
+        private readonly notification: NotificationService,
     ) {}
 
     /**
@@ -64,6 +69,12 @@ export class MatchingDeadlineScheduler {
                 });
 
                 this.requeue(requeueIds);
+
+                void this.notification.sendToMany(
+                    [attempt.matchingA.userId, attempt.matchingB.userId],
+                    NotificationType.RESPONSE_EXPIRED,
+                );
+
                 this.logger.log(`응답 시간초과 처리: attempt=${attempt.id}`);
             } catch (error) {
                 this.logger.error(
@@ -123,6 +134,11 @@ export class MatchingDeadlineScheduler {
                 // 한쪽만 결제한 채 마감되면 결제한 쪽 돈이 묶이므로 되돌려준다.
                 // 트랜잭션 밖에서 처리한다 (외부 API 호출이라 실패해도 마감 처리는 유지되어야 함)
                 await this.payment.refundAllForAttempt(attempt.id);
+
+                void this.notification.sendToMany(
+                    [attempt.matchingA.userId, attempt.matchingB.userId],
+                    NotificationType.PAYMENT_EXPIRED,
+                );
 
                 this.logger.log(`결제 시간초과 처리: attempt=${attempt.id}`);
             } catch (error) {
