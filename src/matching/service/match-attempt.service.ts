@@ -15,6 +15,10 @@ import {
 } from '../../generated/prisma/enums';
 import { MatchAttemptDto } from '../dto/request/match-attempt.dto';
 import { MatchingEngineService } from './matching-engine.service';
+import {
+    NotificationService,
+    NotificationType,
+} from '../../notification/service/notification.service';
 import { MatchingPenaltyService } from './matching-penalty.service';
 import {calcAge} from "../../common/age.util";
 import { MATCHING_PAYMENT_AMOUNT } from "../../common/payment.constant";
@@ -29,6 +33,7 @@ export class MatchAttemptService {
         private readonly prisma: PrismaService,
         private readonly penalty: MatchingPenaltyService,
         private readonly matchingEngine: MatchingEngineService,
+        private readonly notification: NotificationService,
     ) {}
 
     async findOne(userId: string, matchAttemptId: string) {
@@ -159,7 +164,11 @@ export class MatchAttemptService {
                 // 거절당한 쪽(상대): 카운트 변화 없이 즉시 재탐색 가능 상태로 복귀
                 await this.penalty.releaseWithoutPenalty(tx, otherMatching.id);
 
-                return { attempt: updatedAttempt, requeueMatchingId: otherMatching.id };
+                return {
+                    attempt: updatedAttempt,
+                    requeueMatchingId: otherMatching.id,
+                    notifyPaymentPending: null,
+                };
             }
 
             /* ACCEPTED: 상대방이 이미 수락했는지 확인 (거절이었다면 위에서 이미 걸러졌으므로,
@@ -171,7 +180,7 @@ export class MatchAttemptService {
 
             if (!otherAlreadyAccepted) {
                 // 상대방 응답 대기 — 상태 변화 없음
-                return { attempt, requeueMatchingId: null };
+                return { attempt, requeueMatchingId: null, notifyPaymentPending: null };
             }
 
             // 양쪽 다 수락 -> 결제 대기로 전이
@@ -194,7 +203,11 @@ export class MatchAttemptService {
                 data: { status: MatchingStatus.PAYMENT_PENDING },
             });
 
-            return { attempt: updatedAttempt, requeueMatchingId: null };
+            return {
+                attempt: updatedAttempt,
+                requeueMatchingId: null,
+                notifyPaymentPending: [myMatching.userId, otherMatching.userId],
+            };
         });
 
         // 거절당한 쪽은 사용자 액션 없이 즉시 재탐색. 트랜잭션 커밋 이후 응답 자체는 지연시키지 않음.
@@ -204,6 +217,15 @@ export class MatchAttemptService {
                 .catch((error) =>
                     this.logger.error('거절당한 쪽 즉시 재탐색 중 오류', error as Error),
                 );
+        }
+
+        // 양쪽 다 수락해 결제 단계로 넘어간 경우에만 채워진다.
+        // 결제 마감 시한이 걸린 이벤트라 실시간으로 알려야 한다.
+        if (result.notifyPaymentPending) {
+            void this.notification.sendToMany(
+                result.notifyPaymentPending,
+                NotificationType.PAYMENT_PENDING,
+            );
         }
 
         return result.attempt;

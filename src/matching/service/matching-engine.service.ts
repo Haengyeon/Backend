@@ -11,6 +11,10 @@ import {
 import type { Region } from '../../generated/prisma/enums';
 import {calcAge} from "../../common/age.util";
 import { BlockService } from '../../safety/service/block.service';
+import {
+    NotificationService,
+    NotificationType,
+} from '../../notification/service/notification.service';
 
 const RESPOND_WINDOW_MS = 12 * 60 * 60 * 1000; // 12시간 이내 미응답 시 취소
 
@@ -86,6 +90,7 @@ export class MatchingEngineService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly blocks: BlockService,
+        private readonly notification: NotificationService,
     ) {}
 
     /**
@@ -137,6 +142,14 @@ export class MatchingEngineService {
                     this.logger.log(
                         `MatchAttempt 생성 (stage=${stage.label}): ${matching.id} <-> ${candidate.id}`,
                     );
+
+                    // 응답을 기다려야 하는 이벤트라 실시간으로 알려야 한다.
+                    // 발송 실패는 NotificationService 안에서 삼켜지므로 매칭 성사 자체는 영향받지 않는다.
+                    void this.notification.sendToMany(
+                        [matching.userId, candidate.userId],
+                        NotificationType.MATCH_FOUND,
+                    );
+
                     return attempt;
                 }
                 // 이 후보는 동시에 다른 시도에 선점됨 -> 같은 단계의 다음 후보 시도

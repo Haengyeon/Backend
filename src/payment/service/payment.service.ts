@@ -12,6 +12,10 @@ import {MatchAttemptStatus, MatchingStatus, PaymentStatus} from "../../generated
 import { CourseGeneratorService } from '../../course/algorithm/course-generator.service';
 import {ChatRoomService} from "../../chat/service/chat-room.service";
 import { MATCHING_PAYMENT_AMOUNT } from "../../common/payment.constant";
+import {
+  NotificationService,
+  NotificationType,
+} from "../../notification/service/notification.service";
 
 const ITEM_NAME = '행연 참가비';
 
@@ -24,6 +28,7 @@ export class PaymentService {
       private readonly kakaoPay: KakaoPayClient,
       private readonly courseGenerator: CourseGeneratorService,
       private readonly chatRoom: ChatRoomService,
+      private readonly notification: NotificationService,
   ) {}
 
   //결제준비: 카카오에 tid 발급받고 결제창 url 반환
@@ -264,6 +269,14 @@ export class PaymentService {
     });
 
     this.logger.log(`매칭 확정: attempt=${matchAttemptId}`);
+
+    // 확정 알림. 채팅방이 생겼다는 것도 이 시점에 같이 알려줘도 되지만,
+    // 채팅방은 여행 전날까지 잠겨 있어 지금 안내하면 눌러도 못 여는 혼선이 생긴다.
+    // 그래서 CHAT_OPEN은 별도로, 실제로 열리는 시점(chat-room.scheduler)에 보낸다.
+    void this.notification.sendToMany(
+        attempt.payments.map((p) => p.userId),
+        NotificationType.MATCH_CONFIRMED,
+    );
 
     // 확정되면 코스를 만든다.
     // TourAPI 호출이 섞여 있어 시간이 걸리므로 결제 응답을 막지 않고 던져 둔다.
