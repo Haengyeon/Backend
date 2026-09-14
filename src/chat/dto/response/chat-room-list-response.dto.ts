@@ -31,6 +31,13 @@ export class ChatRoomSummaryDto {
     @Expose()
     myRemainingCount: number;
 
+    @ApiProperty({
+        example: 3,
+        description: '내가 아직 읽지 않은 상대 메시지 수',
+    })
+    @Expose()
+    unreadCount: number;
+
     @ApiProperty({ example: '짱정운' })
     @Expose()
     partnerName: string;

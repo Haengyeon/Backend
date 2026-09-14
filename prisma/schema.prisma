@@ -500,7 +500,9 @@ model ChatMessageCount {
   userId     String
 
   // 사용자당 30회 제한, 30이 되면 전송 차단
-  usedCount Int @default(0)
+  usedCount  Int       @default(0)
+  //마지막으로 읽은 시각
+  lastReadAt DateTime?
 
   chatRoom ChatRoom @relation(fields: [chatRoomId], references: [id])
   user     User     @relation(fields: [userId], references: [id])

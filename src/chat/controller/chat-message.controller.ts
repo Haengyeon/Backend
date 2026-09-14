@@ -25,6 +25,7 @@ import {
     ChatMessageListResponseDto,
     ChatMessageResponseDto,
 } from '../dto/response/chat-message-response.dto';
+import { ChatReadResponseDto } from '../dto/response/chat-read-response.dto';
 import { CurrentUser } from '../../auth/current-user.decorator';
 
 @ApiTags('Chat')
@@ -77,6 +78,28 @@ export class ChatMessageController {
         );
 
         return plainToInstance(ChatMessageListResponseDto, result, {
+            excludeExtraneousValues: true,
+        });
+    }
+
+    @Post('read')
+    @ApiOperation({
+        summary: '읽음 처리',
+        description:
+            '채팅방을 열었을 때 호출한다. 이 시각 이후에 오는 상대 메시지만 안읽음으로 집계된다.',
+    })
+    @ApiOkResponse({ type: ChatReadResponseDto })
+    @ApiParam({ name: 'chatRoomId' })
+    async markAsRead(
+        @CurrentUser() userId: string,
+        @Param('chatRoomId') chatRoomId: string,
+    ): Promise<ChatReadResponseDto> {
+        const result = await this.chatMessageService.markAsRead(
+            userId,
+            chatRoomId,
+        );
+
+        return plainToInstance(ChatReadResponseDto, result, {
             excludeExtraneousValues: true,
         });
     }

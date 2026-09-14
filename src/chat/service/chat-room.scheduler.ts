@@ -57,4 +57,47 @@ export class ChatRoomScheduler {
 
         this.logger.log(`채팅방 개방: ${rooms.length}건`);
     }
+
+    /**
+     * 여행이 끝난 채팅방을 닫는다.
+     * 여행 당일 24시(= 다음날 00시 KST)까지는 열어둔다.
+     * CLOSED가 되면 메시지 전송이 막힌다(조회는 그대로 가능).
+     * 지난 대화를 다시 볼 수 있어야 하므로 방 자체를 지우지는 않는다.
+     */
+    @Cron(CronExpression.EVERY_HOUR)
+    async closeFinishedRooms() {
+        const result = await this.prisma.chatRoom.updateMany({
+            where: {
+                status: ChatRoomStatus.OPEN,
+                matchAttempt: {
+                    // travelDate는 @db.Date라 UTC 자정으로 저장돼 있다.
+                    // 여행 다음날 00시 KST = travelDate + 1일 - 9시간(UTC)
+                    travelDate: { lt: this.kstTodayAsUtcDate() },
+                },
+            },
+            data: {
+                status: ChatRoomStatus.CLOSED,
+                closedAt: new Date(),
+            },
+        });
+
+        if (result.count > 0) {
+            this.logger.log(`채팅방 종료: ${result.count}건`);
+        }
+    }
+
+    private kstTodayAsUtcDate(): Date {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).formatToParts(new Date());
+
+        const year = Number(parts.find((p) => p.type === 'year')!.value);
+        const month = Number(parts.find((p) => p.type === 'month')!.value);
+        const day = Number(parts.find((p) => p.type === 'day')!.value);
+
+        return new Date(Date.UTC(year, month - 1, day));
+    }
 }

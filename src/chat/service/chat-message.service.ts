@@ -96,8 +96,14 @@ export class ChatMessageService {
             where: {
                 chatRoomId_userId: { chatRoomId, userId },
             },
-            select: { usedCount: true },
+            select: { usedCount: true, lastReadAt: true },
         });
+
+        const unreadCount = await this.countUnread(
+            userId,
+            chatRoomId,
+            countRow?.lastReadAt ?? null,
+        );
 
         return {
             messages: pageItems.map((message) => ({
@@ -109,7 +115,45 @@ export class ChatMessageService {
             nextCursor: hasNext ? pageItems[pageItems.length - 1].id : null,
             myRemainingCount:
                 MESSAGE_LIMIT_PER_USER - (countRow?.usedCount ?? 0),
+            unreadCount,
         };
+    }
+
+    /**
+     * 읽음 처리.
+     * 메시지 id가 아니라 시각으로 기록
+     */
+    async markAsRead(userId: string, chatRoomId: string) {
+        await this.validateParticipant(userId, chatRoomId, {
+            requireOpen: false,
+        });
+
+        await this.prisma.chatMessageCount.update({
+            where: {
+                chatRoomId_userId: { chatRoomId, userId },
+            },
+            data: { lastReadAt: new Date() },
+        });
+
+        return { unreadCount: 0 };
+    }
+
+    /**
+     * 내가 아직 읽지 않은 상대 메시지 수.
+     * 한 번도 읽은 적이 없으면(lastReadAt이 null) 상대 메시지 전부가 안 읽은 것이다.
+     */
+    async countUnread(
+        userId: string,
+        chatRoomId: string,
+        lastReadAt: Date | null,
+    ): Promise<number> {
+        return this.prisma.chatMessage.count({
+            where: {
+                chatRoomId,
+                senderId: { not: userId },
+                ...(lastReadAt && { createdAt: { gt: lastReadAt } }),
+            },
+        });
     }
 
     /** 참여자인지, (전송이면) 채팅방이 열려 있는지 검증 */
