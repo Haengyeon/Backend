@@ -36,11 +36,8 @@ lerna-debug.log*
 !.vscode/extensions.json
 
 # dotenv environment variable files
-.env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
+# public 레포이므로 .env로 시작하는 모든 파일을 차단한다
+.env*
 
 # temp directory
 .temp
