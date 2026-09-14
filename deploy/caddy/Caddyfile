@@ -3,7 +3,12 @@
 
 haengyeon.site {
 	encode gzip
-	reverse_proxy app:4000
+
+	# 배포로 컨테이너가 교체되는 몇 초 동안 502를 내지 않고 기다렸다 다시 붙는다
+	reverse_proxy app:4000 {
+		lb_try_duration 30s
+		lb_try_interval 250ms
+	}
 
 	log {
 		output file /var/log/caddy/access.log
