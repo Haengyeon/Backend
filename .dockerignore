@@ -1,0 +1,18 @@
+# 빌드 컨텍스트에서 제외.
+# node_modules와 uploads가 통째로 올라가면 빌드가 몇 배 느려진다.
+node_modules
+dist
+.git
+.github
+uploads
+src/generated/prisma
+
+# 비밀값이 이미지에 섞여 들어가지 않도록
+.env
+.env.*
+!.env.production.example
+
+*.log
+.DS_Store
+coverage
+test

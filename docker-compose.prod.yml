@@ -1,0 +1,35 @@
+# 배포용. 로컬 개발은 docker-compose.yml을 쓴다.
+# DB는 Cloud SQL이라 여기엔 app + caddy만 있다. DATABASE_URL은 .env에서 온다.
+
+services:
+  app:
+    build: .
+    restart: always
+    env_file: .env
+    environment:
+      PORT: 4000
+      # refresh 쿠키가 secure + sameSite=none으로 나가려면 필요
+      NODE_ENV: production
+    volumes:
+      - uploads_data:/app/uploads
+
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # 인증서 보관. 지우면 재발급된다
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+    depends_on:
+      - app
+
+volumes:
+  uploads_data:
+  caddy_data:
+  caddy_config:
+  caddy_logs:

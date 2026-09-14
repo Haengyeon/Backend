@@ -1,0 +1,12 @@
+# api.haengyeon.site -> 34.64.180.100 A 레코드가 있어야 인증서가 발급된다.
+# 도메인 변경 시 아래 한 줄만 수정.
+
+api.haengyeon.site {
+	encode gzip
+	reverse_proxy app:4000
+
+	log {
+		output file /var/log/caddy/access.log
+		format console
+	}
+}
