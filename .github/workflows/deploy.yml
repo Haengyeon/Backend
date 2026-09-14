@@ -1,0 +1,49 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 배포가 겹치면 빌드가 꼬인다
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  VM_HOST: 34.64.180.100
+  VM_USER: sojeong
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH 키 준비
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: 배포
+        run: |
+          ssh -i ~/.ssh/deploy_key "$VM_USER@$VM_HOST" 'bash -se' <<'SCRIPT'
+          set -euo pipefail
+          cd ~/app
+
+          git fetch origin main
+          git reset --hard origin/main
+
+          # 이미지를 먼저 만들고, 마이그레이션을 끝낸 뒤에 컨테이너를 교체한다
+          docker compose -f docker-compose.prod.yml build
+          docker compose -f docker-compose.prod.yml run --rm --no-deps app npx prisma migrate deploy
+          docker compose -f docker-compose.prod.yml up -d
+
+          # 빌드마다 쌓이는 옛 이미지가 30GB 디스크를 채운다
+          docker image prune -f
+          SCRIPT
+
+      - name: 상태 확인
+        run: |
+          ssh -i ~/.ssh/deploy_key "$VM_USER@$VM_HOST" \
+            'docker compose -f ~/app/docker-compose.prod.yml ps'
