@@ -166,7 +166,7 @@ export class CourseController {
     summary: '인증샷 업로드',
     description:
         '사진 파일을 직접 올린다. 사용자 한 명이 같은 미션에 한 장만 올릴 수 있다. ' +
-        '저장된 사진은 응답의 imageUrl로 다시 열 수 있다. ' +
+        '응답의 imageUrl은 24시간짜리 서명 URL이다. 만료되면 코스 조회로 새로 받는다. ' +
         '사진을 다 채워도 코스는 끝나지 않는다. 완료는 여행 다음 날 서버가 처리하고 ' +
         '그때 스탬프와 포인트가 두 사람에게 지급된다.',
   })
@@ -207,7 +207,12 @@ export class CourseController {
         userId,
         courseId,
         missionId,
-        { filename: file.filename, comment: dto.comment },
+        {
+          buffer: file.buffer,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          comment: dto.comment,
+        },
     );
   }
 

@@ -8,6 +8,7 @@
 import { CourseQueryService } from './course-query.service';
 import { CourseReviewService } from './course-review.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { StorageService } from '../../storage/storage.service';
 import { CourseStatus } from '../../generated/prisma/enums';
 
 const USER_ID = 'user-1';
@@ -28,8 +29,14 @@ function buildService(openMatching: { id: string } | null) {
     matchAttempt: { findFirst: jest.fn().mockResolvedValue(null) },
   };
 
+  // 이 테스트는 사진 경로를 타지 않아 서명은 빈 결과로 충분하다
+  const storage = {
+    signMany: jest.fn().mockResolvedValue(new Map<string, string>()),
+  } as unknown as StorageService;
+
   const service = new CourseQueryService(
     mock as unknown as PrismaService,
+    storage,
     {} as CourseReviewService,
   );
 

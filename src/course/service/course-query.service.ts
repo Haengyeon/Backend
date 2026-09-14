@@ -10,6 +10,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { StorageService } from '../../storage/storage.service';
 import {
   CourseStatus,
   MatchAttemptStatus,
@@ -79,6 +80,7 @@ const detailInclude = {
 export class CourseQueryService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
     private readonly review: CourseReviewService,
   ) {}
 
@@ -151,8 +153,24 @@ export class CourseQueryService {
       course.spots.map((spot) => spot.contentId),
     );
 
+    // 인증샷은 DB에 객체 경로만 있다. 서명은 IAM을 타므로 한 번에 모아서 한다
+    const signedPhotos = await this.storage.signMany(
+      course.spots.flatMap((spot) =>
+        spot.missions.flatMap((mission) =>
+          mission.photos.map((photo) => photo.imageUrl),
+        ),
+      ),
+    );
+
     const spots = course.spots.map((spot) =>
-      this.toSpotDto(spot, course.region, userId, sides.partnerUserId, reviews),
+      this.toSpotDto(
+        spot,
+        course.region,
+        userId,
+        sides.partnerUserId,
+        reviews,
+        signedPhotos,
+      ),
     );
 
     const full: CourseDetailResponseDto = {
@@ -327,6 +345,17 @@ export class CourseQueryService {
     const hasMore = rows.length > take;
     const page = hasMore ? rows.slice(0, take) : rows;
 
+    // 대표 사진이 인증샷일 수 있어서 목록에도 서명이 필요하다
+    const signedPhotos = await this.storage.signMany(
+      page.flatMap((course) =>
+        course.spots.flatMap((spot) =>
+          spot.missions.flatMap((mission) =>
+            mission.photos.map((photo) => photo.imageUrl),
+          ),
+        ),
+      ),
+    );
+
     const items = page.map((course) => {
       const sides = this.resolveSides(course.matchAttempt, userId)!;
       const photos = course.spots.flatMap((spot) =>
@@ -353,7 +382,9 @@ export class CourseQueryService {
         travelDate: toDateString(course.travelDate),
         completedAt: course.completedAt,
         // 관광지 사진이 없으면 두 사람이 찍은 첫 인증샷을 대표로 쓴다
-        thumbnailUrl: course.thumbnailUrl ?? photos[0]?.imageUrl ?? null,
+        thumbnailUrl:
+          course.thumbnailUrl ??
+          (photos[0] ? (signedPhotos.get(photos[0].imageUrl) ?? null) : null),
         partner: this.toPartnerDto(sides.partnerProfile),
         photoCount: photos.length,
         hasReview: course.reviews.length > 0,
@@ -517,6 +548,7 @@ export class CourseQueryService {
     userId: string,
     partnerUserId: string,
     reviews: Map<string, { count: number; mine: boolean }>,
+    signedPhotos: Map<string, string>,
   ): CourseSpotDto {
     // 알고리즘은 스팟당 미션 하나만 만든다
     const mission = spot.missions[0];
@@ -560,7 +592,7 @@ export class CourseQueryService {
               .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
               .map((photo) => ({
                 id: photo.id,
-                imageUrl: photo.imageUrl,
+                imageUrl: signedPhotos.get(photo.imageUrl) ?? '',
                 comment: photo.comment,
                 isMine: photo.userId === userId,
                 createdAt: photo.createdAt,
