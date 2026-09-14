@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { PaymentController } from './controller/payment.controller';
 import { PaymentService } from './service/payment.service';
 import { KakaoPayClient } from './service/kakao-pay.client';
+import { PaymentRefundScheduler } from './service/payment-refund.scheduler';
 import { CourseModule } from '../course/course.module';
 import {ChatModule} from "../chat/chat.module";
 
@@ -11,7 +12,7 @@ import {ChatModule} from "../chat/chat.module";
 @Module({
   imports: [ChatModule,CourseModule],
   controllers: [PaymentController],
-  providers: [PaymentService, KakaoPayClient],
+  providers: [PaymentService, KakaoPayClient, PaymentRefundScheduler],
   // 결제 마감 스케줄러(매칭 도메인)에서 환불을 호출한다
   exports: [PaymentService],
 })

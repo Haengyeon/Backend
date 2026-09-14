@@ -186,10 +186,25 @@ export class PaymentService {
     if (payment.status !== PaymentStatus.APPROVED) return false;
     if (!payment.kakaoPayTid) return false;
 
-    await this.kakaoPay.cancel({
-      tid: payment.kakaoPayTid,
-      cancelAmount: payment.amount,
-    });
+    try {
+      await this.kakaoPay.cancel({
+        tid: payment.kakaoPayTid,
+        cancelAmount: payment.amount,
+      });
+    } catch (error) {
+      // 카카오 장애나 일시적 네트워크 문제로 실패할 수 있다.
+      // 시도 이력을 남겨 두면 스케줄러가 나중에 다시 집어 갈 수 있고,
+      // 반복 실패하는 건은 횟수로 걸러 수동 처리 대상으로 드러난다.
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          refundAttemptCount: { increment: 1 },
+          lastRefundTriedAt: new Date(),
+        },
+      });
+
+      throw error;
+    }
 
     await this.prisma.payment.update({
       where: { id: payment.id },
