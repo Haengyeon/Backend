@@ -9,10 +9,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { unlink } from 'fs/promises';
-import { join } from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
-import { UPLOAD_DIR, toPublicUrl } from '../upload.config';
+import { StorageService } from '../../storage/storage.service';
+import { buildObjectPath } from '../upload.config';
 import { CourseStatus } from '../../generated/prisma/enums';
 import { daysUntil } from '../course-date.util';
 import { isUniqueViolation } from '../../common/prisma-error.util';
@@ -20,10 +19,18 @@ import { MissionPhotoResponseDto } from '../dto/response/course-progress-respons
 import { CourseAccessService } from './course-access.service';
 import { CourseCompletionService } from './course-completion.service';
 
+type PhotoUpload = {
+  buffer: Buffer;
+  originalName: string;
+  mimeType: string;
+  comment?: string;
+};
+
 @Injectable()
 export class CoursePhotoService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
     private readonly access: CourseAccessService,
     private readonly completion: CourseCompletionService,
   ) {}
@@ -31,29 +38,34 @@ export class CoursePhotoService {
   /**
    * 인증샷 업로드.
    *
-   * 파일은 컨트롤러(multer)가 이미 디스크에 저장했고 여기는 그 파일명만 받는다.
-   * 사진을 DB에 남기지 못하면 올라간 파일이 주인 없이 남으므로 지워 준다.
+   * 검사를 먼저 끝내고 파일을 올린다. 순서를 뒤집으면 권한 없는 요청에도
+   * 객체가 만들어져 주인 없는 파일이 쌓인다.
    */
   async uploadMissionPhoto(
     userId: string,
     courseId: string,
     missionId: string,
-    upload: { filename: string; comment?: string },
+    upload: PhotoUpload,
   ): Promise<MissionPhotoResponseDto> {
+    await this.assertCanUpload(userId, courseId, missionId);
+
+    const objectPath = buildObjectPath(upload.originalName);
+    await this.storage.upload(objectPath, upload.buffer, upload.mimeType);
+
     try {
-      return await this.savePhoto(userId, courseId, missionId, upload);
+      return await this.savePhoto(userId, missionId, courseId, objectPath, upload.comment);
     } catch (error) {
-      await this.discardUpload(upload.filename);
+      // DB에 남기지 못하면 올라간 객체가 주인 없이 남는다
+      await this.storage.remove(objectPath);
       throw error;
     }
   }
 
-  private async savePhoto(
+  private async assertCanUpload(
     userId: string,
     courseId: string,
     missionId: string,
-    upload: { filename: string; comment?: string },
-  ): Promise<MissionPhotoResponseDto> {
+  ): Promise<void> {
     const course = await this.access.loadCourseForUser(courseId, userId);
 
     if (daysUntil(course.travelDate) > 0) {
@@ -83,15 +95,24 @@ export class CoursePhotoService {
     if (!mission || mission.courseId !== courseId) {
       throw new NotFoundException('미션을 찾을 수 없습니다');
     }
+  }
 
+  private async savePhoto(
+    userId: string,
+    missionId: string,
+    courseId: string,
+    objectPath: string,
+    comment?: string,
+  ): Promise<MissionPhotoResponseDto> {
     let photo;
     try {
       photo = await this.prisma.courseMissionPhoto.create({
         data: {
           missionId,
           userId,
-          imageUrl: toPublicUrl(upload.filename),
-          comment: upload.comment ?? null,
+          // 전체 URL이 아니라 객체 경로다. 서명 URL은 만료되므로 저장하지 않는다
+          imageUrl: objectPath,
+          comment: comment ?? null,
         },
       });
     } catch (error) {
@@ -107,7 +128,7 @@ export class CoursePhotoService {
     return {
       id: photo.id,
       missionId: photo.missionId,
-      imageUrl: photo.imageUrl,
+      imageUrl: await this.storage.signedUrl(photo.imageUrl),
       comment: photo.comment,
       createdAt: photo.createdAt,
       missionCompleted:
@@ -117,14 +138,5 @@ export class CoursePhotoService {
         totalMissions: progress.missions.length,
       },
     };
-  }
-
-  /** 저장에 실패한 업로드 파일을 지운다. 실패해도 원래 에러를 덮지 않는다. */
-  private async discardUpload(filename: string) {
-    try {
-      await unlink(join(UPLOAD_DIR, filename));
-    } catch {
-      // 이미 없거나 지울 수 없으면 그냥 둔다
-    }
   }
 }

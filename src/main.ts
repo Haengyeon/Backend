@@ -7,7 +7,6 @@ import { JwtService } from '@nestjs/jwt';
 import * as cookieParser from 'cookie-parser';
 
 import { AppModule } from './app.module';
-import { UPLOAD_DIR, UPLOAD_URL_PREFIX } from './course/upload.config';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 
 async function bootstrap() {
@@ -23,10 +22,6 @@ async function bootstrap() {
     origin: process.env.FRONTEND_BASE_URL ?? 'http://localhost:3000',
     credentials: true,
   });
-
-  // 업로드한 인증샷을 다시 내려주는 경로.
-  // setGlobalPrefix 아래가 아니라 루트에 붙어서 /uploads/파일명 으로 열린다.
-  app.useStaticAssets(UPLOAD_DIR, { prefix: `${UPLOAD_URL_PREFIX}/` });
 
   app.useGlobalPipes(
       new ValidationPipe({
