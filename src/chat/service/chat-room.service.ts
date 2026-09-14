@@ -1,5 +1,5 @@
 import {Injectable, Logger, NotFoundException} from "@nestjs/common";
-import {MESSAGE_LIMIT_PER_USER} from "./chat-message.service";
+import {ChatMessageService, MESSAGE_LIMIT_PER_USER} from "./chat-message.service";
 import {PrismaService} from "../../prisma/prisma.service";
 import {ChatRoomStatus} from "../../generated/prisma/enums";
 import {calcAge} from "../../common/age.util";
@@ -13,7 +13,10 @@ type ChatRoomWriter = {
 export class ChatRoomService {
     private readonly logger = new Logger(ChatRoomService.name);
 
-    constructor(private readonly prisma: PrismaService) {}
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly chatMessage: ChatMessageService,
+    ) {}
 
     // 결제가 양쪽 다 완료되어 매칭이 확정된 시점에 호출
     // 채팅방은 바로 열리지 않고 여행 전날 00시에 open으로 바뀜
@@ -82,7 +85,7 @@ export class ChatRoomService {
                 },
                 messageCounts: {
                     where: { userId },
-                    select: { usedCount: true },
+                    select: { usedCount: true, lastReadAt: true },
                 },
             },
         });
@@ -102,7 +105,14 @@ export class ChatRoomService {
             throw new NotFoundException('상대방 프로필을 찾을 수 없습니다.');
         }
 
-        const usedCount = chatRoom.messageCounts.at(0)?.usedCount ?? 0;
+        const myCount = chatRoom.messageCounts.at(0);
+        const usedCount = myCount?.usedCount ?? 0;
+
+        const unreadCount = await this.chatMessage.countUnread(
+            userId,
+            chatRoom.id,
+            myCount?.lastReadAt ?? null,
+        );
 
         return {
             id: chatRoom.id,
@@ -112,6 +122,7 @@ export class ChatRoomService {
             openAt: chatRoom.openAt,
             travelDate: matchAttempt.travelDate,
             myRemainingCount: MESSAGE_LIMIT_PER_USER - usedCount,
+            unreadCount,
 
             partner: {
                 name: partnerProfile.name,
@@ -164,7 +175,7 @@ export class ChatRoomService {
                 },
                 messageCounts: {
                     where: { userId },
-                    select: { usedCount: true },
+                    select: { usedCount: true, lastReadAt: true },
                 },
                 messages: {
                     orderBy: { createdAt: 'desc' },
@@ -174,15 +185,22 @@ export class ChatRoomService {
             },
         });
 
-        const rooms = chatRooms.map((chatRoom) => {
+        const rooms = await Promise.all(chatRooms.map(async (chatRoom) => {
             const { matchAttempt } = chatRoom;
             const isSideA = matchAttempt.matchingA.userId === userId;
             const partnerProfile = (
                 isSideA ? matchAttempt.matchingB : matchAttempt.matchingA
             ).user.profile;
 
-            const usedCount = chatRoom.messageCounts.at(0)?.usedCount ?? 0;
+            const myCount = chatRoom.messageCounts.at(0);
+            const usedCount = myCount?.usedCount ?? 0;
             const lastMessage = chatRoom.messages.at(0);
+
+            const unreadCount = await this.chatMessage.countUnread(
+                userId,
+                chatRoom.id,
+                myCount?.lastReadAt ?? null,
+            );
 
             return {
                 id: chatRoom.id,
@@ -199,14 +217,13 @@ export class ChatRoomService {
                 lastMessageContent: lastMessage?.content ?? null,
                 lastMessageAt: lastMessage?.createdAt ?? null,
             };
-        });
+        }));
 
         return { rooms };
     }
 
     /**
      * 채팅방 개방 시각 = 여행 전날 00:00 (KST).
-     *
      * travelDate는 @db.Date라 UTC 자정으로 저장돼 있다.
      * 거기서 하루를 빼고, KST 자정이 되도록 9시간을 앞당긴다.
      * 예) travelDate 2026-08-27 -> 2026-08-26 00:00 KST -> 2026-08-25T15:00:00Z

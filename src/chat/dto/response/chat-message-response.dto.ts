@@ -35,4 +35,11 @@ export class ChatMessageListResponseDto {
     @ApiProperty({ example: 27, description: '내가 더 보낼 수 있는 횟수' })
     @Expose()
     myRemainingCount: number;
+
+    @ApiProperty({
+        example: 3,
+        description: '내가 아직 읽지 않은 상대 메시지 수',
+    })
+    @Expose()
+    unreadCount: number;
 }

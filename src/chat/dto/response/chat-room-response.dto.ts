@@ -86,6 +86,13 @@ export class ChatRoomResponseDto {
     @Expose()
     myRemainingCount: number;
 
+    @ApiProperty({
+        example: 3,
+        description: '내가 아직 읽지 않은 상대 메시지 수',
+    })
+    @Expose()
+    unreadCount: number;
+
     @ApiProperty({ type: ChatPartnerProfileDto })
     @Expose()
     @Type(() => ChatPartnerProfileDto)
