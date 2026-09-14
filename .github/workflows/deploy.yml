@@ -38,7 +38,7 @@ jobs:
           docker compose -f docker-compose.prod.yml build
           docker compose -f docker-compose.prod.yml run --rm --no-deps app npx prisma migrate deploy
           # --wait: 헬스체크가 통과할 때까지 기다린다. 실패하면 배포도 실패로 끝난다
-          docker compose -f docker-compose.prod.yml up -d --wait
+          docker compose -f docker-compose.prod.yml up -d --force-recreate --wait
 
           # Caddyfile은 볼륨이라 up만으로는 반영되지 않는다
           docker compose -f docker-compose.prod.yml exec -T caddy \
@@ -52,3 +52,19 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key "$VM_USER@$VM_HOST" \
             'docker compose -f ~/app/docker-compose.prod.yml ps'
+
+      - name: 배포 검증
+        run: |
+          # 밖에서 실제로 응답하는지 본다. 안 되면 배포를 실패로 끝낸다
+          for i in $(seq 1 12); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' \
+              https://haengyeon.site/api/v1/health --max-time 10 || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "health 200 - 배포 반영 확인"
+              exit 0
+            fi
+            echo "  ($i/12) code=$code"
+            sleep 5
+          done
+          echo "health 엔드포인트가 응답하지 않습니다"
+          exit 1
