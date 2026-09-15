@@ -16,6 +16,7 @@ import {
 import { CreateMatchingDto } from '../dto/request/create-matching.dto';
 import { UpdateMatchingDto } from '../dto/request/update-matching.dto';
 import { MatchingEngineService } from './matching-engine.service';
+import { sigunguNameOf } from '../../course/algorithm/sigungu-name';
 
 @Injectable()
 export class MatchingService {
@@ -48,7 +49,14 @@ export class MatchingService {
     const matching = await this.prisma.matching.create({
       data: {
         userId,
-        regions: dto.regions,
+        regionPreferences: {
+          create: dto.regionPreferences.map((pref, index) => ({
+            region: pref.region,
+            sigunguCode: pref.sigunguCode,
+            // 배열 순서가 곧 순위다. 1순위부터 시작하도록 +1
+            priority: index + 1,
+          })),
+        },
         ageMin: dto.ageMin,
         ageMax: dto.ageMax,
         preferredGender: dto.preferredGender,
@@ -98,7 +106,17 @@ export class MatchingService {
     await this.prisma.matching.update({
       where: { id: matchingId },
       data: {
-        regions: dto.regions,
+        // 순위가 있는 목록이라 부분 수정이 의미가 없다. 보내면 통째로 갈아끼운다.
+        ...(dto.regionPreferences && {
+          regionPreferences: {
+            deleteMany: {},
+            create: dto.regionPreferences.map((pref, index) => ({
+              region: pref.region,
+              sigunguCode: pref.sigunguCode,
+              priority: index + 1,
+            })),
+          },
+        }),
         ageMin: dto.ageMin,
         ageMax: dto.ageMax,
         preferredGender: dto.preferredGender,
@@ -192,15 +210,23 @@ export class MatchingService {
       where: { id: matchingId },
       include: {
         availableDates: { orderBy: { date: 'asc' } },
+        regionPreferences: { orderBy: { priority: 'asc' } },
         attemptsAsA: activeAttemptFilter,
         attemptsAsB: activeAttemptFilter,
       },
     });
 
-    const { attemptsAsA, attemptsAsB, ...rest } = matching;
+    const { attemptsAsA, attemptsAsB, regionPreferences, ...rest } = matching;
     const currentAttempt = attemptsAsA[0] ?? attemptsAsB[0] ?? null;
 
-    return { ...rest, currentAttempt };
+    return {
+      ...rest,
+      regionPreferences: regionPreferences.map((pref) => ({
+        ...pref,
+        sigunguName: sigunguNameOf(pref.region, pref.sigunguCode),
+      })),
+      currentAttempt,
+    };
   }
 
   private parseDate(date: string): Date {

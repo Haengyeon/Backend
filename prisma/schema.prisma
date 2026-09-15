@@ -266,9 +266,6 @@ model Matching {
   id     String @id @default(uuid())
   userId String
 
-  // 여행 희망 지역
-  regions Region[]
-
   // 선호 상대 나이
   ageMin Int
   ageMax Int
@@ -291,7 +288,8 @@ model Matching {
 
   user User @relation(fields: [userId], references: [id])
 
-  availableDates MatchingAvailableDate[]
+  availableDates    MatchingAvailableDate[]
+  regionPreferences MatchingRegionPreference[]
 
   attemptsAsA MatchAttempt[] @relation("MatchingA")
   attemptsAsB MatchAttempt[] @relation("MatchingB")
@@ -312,6 +310,25 @@ model MatchingAvailableDate {
   matching Matching @relation(fields: [matchingId], references: [id])
 
   @@unique([matchingId, date])
+}
+
+// 희망 지역. 시군구까지 받는다.
+// 시군구 코드는 시·도 안에서만 유일해서(서울 '1'=강남구, 부산 '1'=강서구)
+// 둘을 항상 쌍으로 다뤄야 한다.
+model MatchingRegionPreference {
+  id         String @id @default(uuid())
+  matchingId String
+
+  region      Region
+  sigunguCode String
+
+  // 1이 가장 높은 순위. 겹치는 지역이 여럿이면 양쪽 순위 합이 낮은 곳으로 확정한다.
+  priority Int
+
+  matching Matching @relation(fields: [matchingId], references: [id])
+
+  @@unique([matchingId, region, sigunguCode])
+  @@index([region, sigunguCode])
 }
 
 // ============================================================
@@ -341,9 +358,11 @@ model MatchAttempt {
   matchingBId String
 
   // 매칭 시 실제 확정된 조건
-  region     Region
-  theme      CourseTheme
-  travelDate DateTime    @db.Date
+  region      Region
+  // 확정된 시군구. 코스 후보를 이 범위로 좁힘.
+  sigunguCode String
+  theme       CourseTheme
+  travelDate  DateTime    @db.Date
 
   status MatchAttemptStatus @default(WAITING_RESPONSE)
 
@@ -428,7 +447,7 @@ model Payment {
   approvedAt  DateTime?
   cancelledAt DateTime?
 
-  // 환불 재시도 관리. 카카오 호출이 실패하면 스케줄러가 다시 집감어 감
+  // 환불 재시도 관리. 카카오 호출이 실패하면 스케줄러가 다시 집어 감
   refundAttemptCount Int       @default(0)
   lastRefundTriedAt  DateTime?
 
@@ -540,10 +559,11 @@ model Course {
   title       String
   description String?
 
-  // MatchAttempt 확정 정보를 snapshot으로 저장
-  region     Region
-  theme      CourseTheme
-  travelDate DateTime    @db.Date
+  // MatchAttempt 확정 정보 저장
+  region      Region
+  sigunguCode String?
+  theme       CourseTheme
+  travelDate  DateTime    @db.Date
 
   // 전체 예상 여행 시간
   durationMinutes Int?

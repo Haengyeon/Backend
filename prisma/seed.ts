@@ -22,6 +22,8 @@ import {
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { MatchingModule } from '../src/matching/matching.module';
 import { ChatModule } from '../src/chat/chat.module';
+import { NotificationModule } from '../src/notification/notification.module';
+import { StorageModule } from '../src/storage/storage.module';
 import { MatchingService } from '../src/matching/service/matching.service';
 import { MatchAttemptService } from '../src/matching/service/match-attempt.service';
 import { ChatRoomService } from '../src/chat/service/chat-room.service';
@@ -160,7 +162,9 @@ const TEST_USERS = [
             jobCategory: JobCategory.DESIGN,
             jobPrivate: false,
             hobbies: [Hobby.CAFE, Hobby.ART, Hobby.EXHIBITION],
-            profileImageUrl: avatarUrl('female-1'),
+            profileImageUrl: avatarUrl('female-1')
+
+            ,
             fullBodyImageUrl: fullBodyUrl('정운'),
         },
     },
@@ -255,7 +259,18 @@ const TEST_USERS = [
     // AppModule도 CourseModule도 통째로 가져오지 않는다. CourseController가
     // upload.config -> multer를 끌어오는데, 시드에는 HTTP 계층도 파일 업로드도
     // 필요 없다. 그래서 코스 쪽은 필요한 프로바이더만 직접 나열한다.
-    imports: [PrismaModule, MatchingModule, ChatModule],
+    // NotificationModule/StorageModule은 @Global()이지만, 전역 적용은 이 모듈
+    // 트리에서 실제로 한 번 import되어야 일어난다. 여기서 안 부르면
+    // MatchingEngineService/ChatRoomScheduler(NotificationService),
+    // MatchingModule -> PaymentModule -> CourseModule -> CourseQueryService(StorageService)
+    // 가 각각 의존성을 못 찾고 부팅이 실패한다.
+    imports: [
+        PrismaModule,
+        MatchingModule,
+        ChatModule,
+        NotificationModule,
+        StorageModule,
+    ],
     providers: [
         CourseGeneratorService,
         TourApiClient,
@@ -276,6 +291,7 @@ const TEAMS = [
         // 지역을 팀마다 갈라 둬야 알고리즘이 짝을 섞지 않는다.
         // 겹치면 민준이 다른 팀 여자와 붙을 수도 있다.
         region: Region.GANGWON,
+        sigunguCode: '13', // 춘천시
         male: '1', // 김민준 28
         female: '5', // 장정운 27
         themes: [CourseTheme.NATURE_HEALING, CourseTheme.PHOTO_SPOT],
@@ -284,6 +300,7 @@ const TEAMS = [
     {
         label: '팀 2 — 내일 만남 (D-1)',
         region: Region.JEONBUK,
+        sigunguCode: '12', // 전주시
         male: '2', // 이도윤 25
         female: '6', // 곽소정 24
         themes: [CourseTheme.LOCAL_FOOD_MARKET, CourseTheme.HISTORY_CULTURE],
@@ -292,6 +309,7 @@ const TEAMS = [
     {
         label: '팀 3 — 이미 다녀옴 (완료)',
         region: Region.GYEONGNAM,
+        sigunguCode: '13', // 진주시
         male: '3', // 박현우 29
         female: '7', // 한서연 30
         themes: [CourseTheme.WALKING_TRIP, CourseTheme.NATURE_HEALING],
@@ -300,6 +318,7 @@ const TEAMS = [
     {
         label: '팀 4 — 3일 뒤 만남 (D-3)',
         region: Region.CHUNGNAM,
+        sigunguCode: '12', // 천안시
         male: '4', // 최우진 40
         female: '8', // 윤아름 23
         themes: [CourseTheme.HISTORY_CULTURE, CourseTheme.ART_SENSIBILITY],
@@ -313,6 +332,7 @@ const TEAMS = [
     {
         label: '팀 5 — 제주 (오늘)',
         region: Region.JEJU,
+        sigunguCode: '4', // 제주시
         male: '9', // 오지호 31
         female: '14', // 유하린 28
         themes: [CourseTheme.NATURE_HEALING, CourseTheme.PHOTO_SPOT],
@@ -321,6 +341,7 @@ const TEAMS = [
     {
         label: '팀 6 — 전남 (오늘)',
         region: Region.JEONNAM,
+        sigunguCode: '13', // 여수시
         male: '10', // 신재현 32
         female: '15', // 서지안 30
         themes: [CourseTheme.LOCAL_FOOD_MARKET, CourseTheme.WALKING_TRIP],
@@ -329,6 +350,7 @@ const TEAMS = [
     {
         label: '팀 7 — 경북 (오늘)',
         region: Region.GYEONGBUK,
+        sigunguCode: '23', // 포항시
         male: '11', // 배준영 26
         female: '16', // 강예린 25
         themes: [CourseTheme.HISTORY_CULTURE, CourseTheme.ART_SENSIBILITY],
@@ -337,6 +359,7 @@ const TEAMS = [
     {
         label: '팀 8 — 충북 (오늘)',
         region: Region.CHUNGBUK,
+        sigunguCode: '10', // 청주시
         male: '12', // 임태균 33
         female: '17', // 조민서 28
         themes: [CourseTheme.ACTIVITY, CourseTheme.WALKING_TRIP],
@@ -345,6 +368,7 @@ const TEAMS = [
     {
         label: '팀 9 — 대전 (오늘)',
         region: Region.DAEJEON,
+        sigunguCode: '4', // 유성구
         male: '13', // 노시윤 24
         female: '18', // 백가온 25
         themes: [CourseTheme.ART_SENSIBILITY, CourseTheme.NIGHT_DATE],
@@ -359,10 +383,28 @@ const TRIP_FEE = 9900;
 const AGE_MIN = 20;
 const AGE_MAX = 45;
 
-/** 오늘로부터 n일 뒤를 YYYY-MM-DD로 */
+/**
+ * 오늘(KST 기준)로부터 n일 뒤를 YYYY-MM-DD로.
+ *
+ * MatchingService.validateAvailableDates()가 "오늘"을 Asia/Seoul 기준으로 계산한다.
+ * 여기서 new Date().toISOString()(UTC 날짜)을 쓰면 자정~아침 9시(KST) 사이에
+ * 두 "오늘"이 하루 어긋나서, dayOffset=0 팀이 "여행 가능 날짜는 오늘부터
+ * 한 달 이내여야 합니다"로 실패한다.
+ */
 function dateAfter(days: number): string {
-    const d = new Date();
-    d.setDate(d.getDate() + days);
+    const koreaParts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).formatToParts(new Date());
+
+    const year = Number(koreaParts.find((p) => p.type === 'year')!.value);
+    const month = Number(koreaParts.find((p) => p.type === 'month')!.value);
+    const day = Number(koreaParts.find((p) => p.type === 'day')!.value);
+
+    const d = new Date(Date.UTC(year, month - 1, day));
+    d.setUTCDate(d.getUTCDate() + days);
     return d.toISOString().slice(0, 10);
 }
 
@@ -475,6 +517,9 @@ async function resetMatchFlow() {
     await prisma.matchingAvailableDate.deleteMany({
         where: { matching: { userId: { in: userIds } } },
     });
+    await prisma.matchingRegionPreference.deleteMany({
+        where: { matching: { userId: { in: userIds } } },
+    });
     await prisma.matching.deleteMany({ where: { userId: { in: userIds } } });
 }
 
@@ -556,7 +601,9 @@ async function runMatchFlow() {
             const seedDate = dateAfter(Math.max(team.dayOffset, 0));
 
             const condition = {
-                regions: [team.region],
+                regionPreferences: [
+                    { region: team.region, sigunguCode: team.sigunguCode },
+                ],
                 ageMin: AGE_MIN,
                 ageMax: AGE_MAX,
                 themes: [...team.themes],

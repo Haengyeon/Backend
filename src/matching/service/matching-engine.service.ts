@@ -24,7 +24,7 @@ const REJECTION_COOLDOWN_DAYS = 30;
 
 // 조건 완화 단계: 위에서부터 순서대로 시도하고, 후보가 1명이라도 나오면 그 단계에서 멈춘다.
 // 항상 필수(완화 대상 아님):
-//   - regions 최소 1개 겹침
+//   - 희망 지역(시·도 + 시군구)이 최소 1곳 겹침
 //   - availableDates 겹침 최소 1일
 //   - preferredGender 상호조건
 // 아래 수치는 초기 추정치 — 실제 매칭 성사율 보면서 튜닝 필요.
@@ -71,6 +71,7 @@ const DEFAULT_THEME: CourseTheme = CourseTheme.LOCAL_FOOD_MARKET;
 
 const matchingInclude = {
     availableDates: true,
+    regionPreferences: { orderBy: { priority: 'asc' as const } },
     user: { include: { profile: true } },
 } as const;
 
@@ -124,8 +125,17 @@ export class MatchingEngineService {
                     userId: { notIn: [matching.userId, ...excludedUserIds] },
                     status: MatchingStatus.SEARCHING,
                     endedAt: null,
-                    // 지역은 여러 개 고를 수 있으므로 하나라도 겹치면 후보로 본다 (항상 필수)
-                    regions: { hasSome: matching.regions },
+                    // 시군구까지 겹쳐야 후보로 본다 (항상 필수, 완화 단계에서도 풀지 않는다).
+                    // 시·도만 맞춰 붙이면 실제로 만나기엔 너무 멀어 취소로 이어지고,
+                    // 그 취소가 거절 횟수로 쌓여 양쪽 다 손해를 본다.
+                    regionPreferences: {
+                        some: {
+                            OR: matching.regionPreferences.map((pref) => ({
+                                region: pref.region,
+                                sigunguCode: pref.sigunguCode,
+                            })),
+                        },
+                    },
                 },
                 include: matchingInclude,
             });
@@ -321,7 +331,7 @@ export class MatchingEngineService {
                     data: {
                         matchingAId: matching.id,
                         matchingBId: candidate.id,
-                        region: this.pickSharedRegion(matching, candidate),
+                        ...this.pickSharedRegion(matching, candidate),
                         theme: this.pickSharedTheme(matching, candidate),
                         travelDate: this.pickSharedDate(matching, candidate),
                         respondDeadlineAt: new Date(Date.now() + RESPOND_WINDOW_MS),
@@ -359,13 +369,51 @@ export class MatchingEngineService {
      * 후보 풀에서 이미 hasSome으로 걸렀으므로 겹치는 지역은 반드시 존재한다.
      * 여러 개 겹치면 앞에 있는 것을 쓴다.
      */
+    /**
+     * 함께 갈 지역(시·도 + 시군구)을 확정한다.
+     *
+     * 후보 풀에서 이미 걸렀으므로 겹치는 곳은 반드시 존재한다.
+     * 여러 곳이 겹치면 양쪽 순위의 합이 가장 낮은 곳을 고른다.
+     * 한쪽 1순위만 보면 먼저 조건을 저장한 사람이 늘 유리해지기 때문
+     */
     private pickSharedRegion(
         matching: MatchingWithRelations,
         candidate: MatchingWithRelations,
-    ): Region {
-        const shared = matching.regions.find((r) => candidate.regions.includes(r));
+    ): { region: Region; sigunguCode: string } {
+        const candidatePriority = new Map(
+            candidate.regionPreferences.map((pref) => [
+                `${pref.region}:${pref.sigunguCode}`,
+                pref.priority,
+            ]),
+        );
 
-        return shared ?? matching.regions[0];
+        let best: { region: Region; sigunguCode: string; score: number } | null =
+            null;
+
+        for (const pref of matching.regionPreferences) {
+            const theirPriority = candidatePriority.get(
+                `${pref.region}:${pref.sigunguCode}`,
+            );
+
+            if (theirPriority === undefined) continue;
+
+            const score = pref.priority + theirPriority;
+
+            if (!best || score < best.score) {
+                best = {
+                    region: pref.region,
+                    sigunguCode: pref.sigunguCode,
+                    score,
+                };
+            }
+        }
+
+        // 후보 풀 조건상 도달할 수 없지만, 타입을 좁히기 위해 방어적으로 둔다
+        const fallback = matching.regionPreferences[0];
+
+        return best
+            ? { region: best.region, sigunguCode: best.sigunguCode }
+            : { region: fallback.region, sigunguCode: fallback.sigunguCode };
     }
 
     /**

@@ -6,30 +6,41 @@ import {
     IsArray,
     IsDateString,
     IsEnum,
+    ValidateNested,
     IsInt,
     Matches,
     Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 import {
     CourseTheme,
     PreferredGender,
     Region,
 } from '../../../generated/prisma/enums';
+import { RegionPreferenceDto } from './region-preference.dto';
 
 export class CreateMatchingDto {
     @ApiProperty({
-        enum: Region,
-        isArray: true,
-        example: [Region.SEOUL, Region.GYEONGGI],
-        description: '여행 희망 지역. 최소 1개, 최대 3개',
+        type: [RegionPreferenceDto],
+        description:
+            '희망 지역. 앞에 넣을수록 높은 순위다(1순위 → 5순위). ' +
+            '최소 1개, 최대 5개. 매칭은 시군구가 겹쳐야 성사된다.',
+        example: [
+            { region: Region.SEOUL, sigunguCode: '1' },
+            { region: Region.GYEONGGI, sigunguCode: '11' },
+        ],
     })
     @IsArray()
     @ArrayMinSize(1)
-    @ArrayMaxSize(3)
-    @ArrayUnique()
-    @IsEnum(Region, { each: true })
-    regions: Region[];
+    @ArrayMaxSize(5)
+    // 객체 배열이라 비교 키를 직접 준다.
+    @ArrayUnique(
+        (pref: RegionPreferenceDto) => `${pref.region}:${pref.sigunguCode}`,
+    )
+    @ValidateNested({ each: true })
+    @Type(() => RegionPreferenceDto)
+    regionPreferences: RegionPreferenceDto[];
 
     // 미성년자와의 매칭을 원천 차단하기 위해 20세 미만은 선호 나이로 설정 불가
     @ApiProperty({

@@ -27,8 +27,8 @@ export class CourseGeneratorService {
   private readonly logger = new Logger(CourseGeneratorService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly tourApi: TourApiClient,
+      private readonly prisma: PrismaService,
+      private readonly tourApi: TourApiClient,
   ) {}
 
   // 만들기 전에 이미 있는지부터 본다.
@@ -38,7 +38,7 @@ export class CourseGeneratorService {
   //
   // 결제 승인이 두 번 들어오는 경우를 대비한 것이라 평소엔 걸릴 일이 없다.
   async generateForMatchAttempt(
-    matchAttemptId: string,
+      matchAttemptId: string,
   ): Promise<{ id: string }> {
     const existing = await this.findCourseId(matchAttemptId);
     if (existing) return existing;
@@ -53,7 +53,7 @@ export class CourseGeneratorService {
     });
     if (!attempt) {
       throw new NotFoundException(
-        `MatchAttempt를 찾을 수 없습니다: ${matchAttemptId}`,
+          `MatchAttempt를 찾을 수 없습니다: ${matchAttemptId}`,
       );
     }
 
@@ -65,14 +65,19 @@ export class CourseGeneratorService {
       THEME_FILTER[theme],
     ]);
 
-    const pool = await this.tourApi.fetchPool(attempt.region, queries);
+    // 매칭이 시군구 단위로 성사됐으므로 후보도 그 범위로 좁힌다
+    const pool = await this.tourApi.fetchPool(
+        attempt.region,
+        queries,
+        attempt.sigunguCode,
+    );
     this.logger.log(
-      `후보 풀 ${pool.length}건 (region=${attempt.region}, theme=${theme}, 호출 ${queries.length}회)`,
+        `후보 풀 ${pool.length}건 (region=${attempt.region}/${attempt.sigunguCode}, theme=${theme}, 호출 ${queries.length}회)`,
     );
 
     const plan = buildCoursePlan(
-      { region: attempt.region, theme, seed: matchAttemptId },
-      pool,
+        { region: attempt.region, theme, seed: matchAttemptId },
+        pool,
     );
 
     for (const spot of plan.spots) {
@@ -82,7 +87,12 @@ export class CourseGeneratorService {
     }
 
     try {
-      return await this.persist(matchAttemptId, attempt.travelDate, plan);
+      return await this.persist(
+          matchAttemptId,
+          attempt.travelDate,
+          attempt.sigunguCode,
+          plan,
+      );
     } catch (error) {
       // 동시 호출로 다른 쪽이 먼저 만든 경우 (matchAttemptId unique 위반)
       if (isUniqueViolation(error)) {
@@ -113,21 +123,21 @@ export class CourseGeneratorService {
     };
   }): CourseTheme {
     const commonHobbies = intersectHobbies(
-      attempt.matchingA.user.profile?.hobbies ?? [],
-      attempt.matchingB.user.profile?.hobbies ?? [],
+        attempt.matchingA.user.profile?.hobbies ?? [],
+        attempt.matchingB.user.profile?.hobbies ?? [],
     );
 
     const picked = selectTheme(
-      attempt.matchingA.themes,
-      attempt.matchingB.themes,
-      commonHobbies,
+        attempt.matchingA.themes,
+        attempt.matchingB.themes,
+        commonHobbies,
     );
 
     if (!picked) return attempt.theme;
 
     if (picked.theme !== attempt.theme) {
       this.logger.log(
-        `테마 재선정: ${attempt.theme} -> ${picked.theme} ` +
+          `테마 재선정: ${attempt.theme} -> ${picked.theme} ` +
           `(공통취미 ${commonHobbies.join(',') || '없음'}, ` +
           `점수 ${picked.scores.map((s) => `${s.theme}:${s.score}`).join(' ')})`,
       );
@@ -145,9 +155,10 @@ export class CourseGeneratorService {
 
   //Course + CourseSpot + CourseMission 저장
   private async persist(
-    matchAttemptId: string,
-    travelDate: Date,
-    plan: CoursePlan,
+      matchAttemptId: string,
+      travelDate: Date,
+      sigunguCode: string,
+      plan: CoursePlan,
   ): Promise<{ id: string }> {
     const regionLabel = REGION_LABEL[plan.region];
     const themeLabel = THEME_LABEL[plan.theme];
@@ -155,7 +166,7 @@ export class CourseGeneratorService {
     // 소개글은 목록 조회에 없어서 장소 4곳만 따로 받아온다.
     // 트랜잭션 밖에서 부른다 — 남의 서버를 기다리는 동안 DB 커넥션을 붙잡지 않는다.
     const overviews = await this.tourApi.fetchOverviews(
-      plan.spots.map((planned) => planned.spot.contentId),
+        plan.spots.map((planned) => planned.spot.contentId),
     );
 
     return this.prisma.$transaction(async (tx) => {
@@ -171,6 +182,7 @@ export class CourseGeneratorService {
           title: `${regionLabel} ${themeLabel} 코스`,
           description: THEME_DESCRIPTION[plan.theme],
           region: plan.region,
+          sigunguCode,
           theme: plan.theme,
           travelDate,
           durationMinutes: plan.durationMinutes,
@@ -192,8 +204,8 @@ export class CourseGeneratorService {
             legalSigunguCode: planned.spot.legalSigunguCode,
             role: planned.role,
             category: categoryLabelOf(
-              planned.spot.lclsSystm1,
-              planned.spot.lclsSystm2,
+                planned.spot.lclsSystm1,
+                planned.spot.lclsSystm2,
             ),
             latitude: planned.spot.latitude,
             longitude: planned.spot.longitude,
