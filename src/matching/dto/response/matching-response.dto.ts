@@ -9,14 +9,36 @@ import {
 } from '../../../generated/prisma/enums';
 import { CurrentMatchAttemptDto } from './current-match-attempt.dto';
 
+export class RegionPreferenceResponseDto {
+    @ApiProperty({ enum: Region })
+    @Expose()
+    region: Region;
+
+    @ApiProperty({ example: '1' })
+    @Expose()
+    sigunguCode: string;
+
+    @ApiProperty({ example: '강남구' })
+    @Expose()
+    sigunguName: string;
+
+    @ApiProperty({ example: 1, description: '1순위가 가장 높다' })
+    @Expose()
+    priority: number;
+}
+
 export class MatchingResponseDto {
     @ApiProperty()
     @Expose()
     id: string;
 
-    @ApiProperty({ enum: Region, isArray: true })
+    @ApiProperty({
+        type: [RegionPreferenceResponseDto],
+        description: '희망 지역. priority 오름차순(1순위가 앞)',
+    })
     @Expose()
-    regions: Region[];
+    @Type(() => RegionPreferenceResponseDto)
+    regionPreferences: RegionPreferenceResponseDto[];
 
     @ApiProperty({ example: 20 })
     @Expose()

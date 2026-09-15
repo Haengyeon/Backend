@@ -32,17 +32,17 @@ function toPlainText(value: unknown): string | null {
   if (typeof value !== 'string') return null;
 
   const text = value
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(
-      /&nbsp;|&amp;|&lt;|&gt;|&quot;|&#39;/g,
-      (entity) => HTML_ENTITIES[entity] ?? entity,
-    )
-    // 태그를 지우면서 생긴 빈 줄과 줄 끝 공백을 정리한다
-    .replace(/[ \t]+/g, ' ')
-    .replace(/ *\n+ */g, '\n')
-    .trim();
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(
+          /&nbsp;|&amp;|&lt;|&gt;|&quot;|&#39;/g,
+          (entity) => HTML_ENTITIES[entity] ?? entity,
+      )
+      // 태그를 지우면서 생긴 빈 줄과 줄 끝 공백을 정리한다
+      .replace(/[ \t]+/g, ' ')
+      .replace(/ *\n+ */g, '\n')
+      .trim();
 
   return text.length > 0 ? text : null;
 }
@@ -88,8 +88,19 @@ export class TourApiClient {
    * 지역 후보 풀을 받아온다.
    * 대분류별로 1회씩만 호출하고, 중분류 필터링과 반경 탐색은 메모리에서 처리한다.
    */
-  async fetchPool(region: Region, queries: PoolQuery[]): Promise<TourSpot[]> {
-    return this.fetch(queries, AREA_CODE[region]);
+  /**
+   * 후보 장소를 긁어온다.
+   *
+   * sigunguCode를 주면 그 시군구 안에서만 찾는다.
+   * 시·도 전체로 찾으면 서울 강남에서 노원까지 도는 코스가 나올 수 있어,
+   * 매칭이 시군구 단위로 성사된 이상 후보도 같은 범위로 좁혀야 한다.
+   */
+  async fetchPool(
+      region: Region,
+      queries: PoolQuery[],
+      sigunguCode?: string | null,
+  ): Promise<TourSpot[]> {
+    return this.fetch(queries, AREA_CODE[region], sigunguCode ?? undefined);
   }
 
   /**
@@ -102,11 +113,12 @@ export class TourApiClient {
   }
 
   private async fetch(
-    queries: PoolQuery[],
-    areaCode?: string,
+      queries: PoolQuery[],
+      areaCode?: string,
+      sigunguCode?: string,
   ): Promise<TourSpot[]> {
     const results = await Promise.all(
-      queries.map((query) => this.fetchOne(areaCode, query)),
+        queries.map((query) => this.fetchOne(areaCode, query, sigunguCode)),
     );
 
     // 대분류가 겹치는 조건이 있으면 같은 장소가 중복될 수 있다.
@@ -130,10 +142,10 @@ export class TourApiClient {
     const unique = [...new Set(contentIds)];
 
     const entries = await Promise.all(
-      unique.map(async (contentId) => {
-        const overview = await this.fetchOverview(contentId);
-        return overview ? ([contentId, overview] as const) : null;
-      }),
+        unique.map(async (contentId) => {
+          const overview = await this.fetchOverview(contentId);
+          return overview ? ([contentId, overview] as const) : null;
+        }),
     );
 
     return new Map(entries.filter((entry) => entry !== null));
@@ -155,7 +167,7 @@ export class TourApiClient {
       });
       if (!response.ok) {
         this.logger.warn(
-          `TourAPI 소개글 응답 실패 (${response.status}) contentId=${contentId}`,
+            `TourAPI 소개글 응답 실패 (${response.status}) contentId=${contentId}`,
         );
         return null;
       }
@@ -168,15 +180,16 @@ export class TourApiClient {
     } catch (error) {
       // 소개글은 없어도 코스가 성립한다. 하나 실패했다고 생성을 막지 않는다
       this.logger.warn(
-        `TourAPI 소개글 호출 실패 contentId=${contentId}: ${error}`,
+          `TourAPI 소개글 호출 실패 contentId=${contentId}: ${error}`,
       );
       return null;
     }
   }
 
   private async fetchOne(
-    areaCode: string | undefined,
-    query: PoolQuery,
+      areaCode: string | undefined,
+      query: PoolQuery,
+      sigunguCode?: string,
   ): Promise<TourSpot[]> {
     const params = new URLSearchParams({
       MobileOS: 'ETC',
@@ -190,6 +203,8 @@ export class TourApiClient {
 
     // 빼면 전국
     if (areaCode) params.set('areaCode', areaCode);
+    // areaCode 없이 sigunguCode만 보내면 TourAPI가 무시한다. 항상 짝으로 보낸다.
+    if (areaCode && sigunguCode) params.set('sigunguCode', sigunguCode);
     if (query.lclsSystm1) params.set('lclsSystm1', query.lclsSystm1);
     if (query.contentTypeId) params.set('contentTypeId', query.contentTypeId);
 
@@ -203,7 +218,7 @@ export class TourApiClient {
 
       if (!response.ok) {
         this.logger.warn(
-          `TourAPI 응답 실패 (${response.status}) areaCode=${areaCode ?? '전국'} ${JSON.stringify(query)}`,
+            `TourAPI 응답 실패 (${response.status}) areaCode=${areaCode ?? '전국'} ${JSON.stringify(query)}`,
         );
         return [];
       }
@@ -213,7 +228,7 @@ export class TourApiClient {
     } catch (error) {
       // 조회 1건이 실패해도 나머지로 코스를 만들 수 있어야 한다
       this.logger.warn(
-        `TourAPI 호출 실패 areaCode=${areaCode ?? '전국'} ${JSON.stringify(query)}: ${error}`,
+          `TourAPI 호출 실패 areaCode=${areaCode ?? '전국'} ${JSON.stringify(query)}: ${error}`,
       );
       return [];
     }
@@ -225,8 +240,8 @@ export class TourApiClient {
     if (!Array.isArray(items)) return [];
 
     return items
-      .map((item: RawTourItem) => this.toTourSpot(item))
-      .filter((spot): spot is TourSpot => spot !== null);
+        .map((item: RawTourItem) => this.toTourSpot(item))
+        .filter((spot): spot is TourSpot => spot !== null);
   }
 
   private toTourSpot(item: RawTourItem): TourSpot | null {
@@ -235,9 +250,9 @@ export class TourApiClient {
 
     // 좌표가 없으면 거리 계산이 불가능하다
     if (
-      !item.contentid ||
-      !Number.isFinite(latitude) ||
-      !Number.isFinite(longitude)
+        !item.contentid ||
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude)
     ) {
       return null;
     }
@@ -274,7 +289,7 @@ export class TourApiClient {
 
     if (sido.length !== 2 || sigungu.length !== 3) {
       this.logger.warn(
-        `행정구역 표준코드 길이가 예상과 다릅니다. contentId=${item.contentid} ` +
+          `행정구역 표준코드 길이가 예상과 다릅니다. contentId=${item.contentid} ` +
           `lDongRegnCd=${sido} lDongSignguCd=${sigungu}`,
       );
       return null;
