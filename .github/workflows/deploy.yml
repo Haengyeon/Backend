@@ -36,7 +36,7 @@ jobs:
 
           # 이미지를 먼저 만들고, 마이그레이션을 끝낸 뒤에 컨테이너를 교체한다
           docker compose -f docker-compose.prod.yml build
-          docker compose -f docker-compose.prod.yml run --rm --no-deps app npx prisma migrate deploy
+          docker compose -f docker-compose.prod.yml run --rm -T --no-deps app npx prisma migrate deploy
           # --wait: 헬스체크가 통과할 때까지 기다린다. 실패하면 배포도 실패로 끝난다
           docker compose -f docker-compose.prod.yml up -d --force-recreate --wait
 
@@ -68,3 +68,18 @@ jobs:
           done
           echo "health 엔드포인트가 응답하지 않습니다"
           exit 1
+
+      - name: 배포된 코드가 최신인지 확인
+        run: |
+          # 컨테이너가 실제로 교체됐는지 본다. health 200만으로는 옛 코드도 통과한다
+          remote=$(ssh -i ~/.ssh/deploy_key "$VM_USER@$VM_HOST" \
+            'docker inspect app-app-1 --format "{{.Image}}"')
+          latest=$(ssh -i ~/.ssh/deploy_key "$VM_USER@$VM_HOST" \
+            'docker image inspect app-app:latest --format "{{.Id}}"')
+          echo "실행 중: $remote"
+          echo "최신:    $latest"
+          if [ "$remote" != "$latest" ]; then
+            echo "컨테이너가 최신 이미지로 교체되지 않았습니다"
+            exit 1
+          fi
+          echo "최신 이미지로 실행 중
