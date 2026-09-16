@@ -27,26 +27,10 @@ jobs:
 
       - name: 배포
         run: |
-          ssh -i ~/.ssh/deploy_key "$VM_USER@$VM_HOST" 'bash -se' <<'SCRIPT'
-          set -euo pipefail
-          cd ~/app
-
-          git fetch origin main
-          git reset --hard origin/main
-
-          # 이미지를 먼저 만들고, 마이그레이션을 끝낸 뒤에 컨테이너를 교체한다
-          docker compose -f docker-compose.prod.yml build
-          docker compose -f docker-compose.prod.yml run --rm -T --no-deps app npx prisma migrate deploy
-          # --wait: 헬스체크가 통과할 때까지 기다린다. 실패하면 배포도 실패로 끝난다
-          docker compose -f docker-compose.prod.yml up -d --force-recreate --wait
-
-          # Caddyfile은 볼륨이라 up만으로는 반영되지 않는다
-          docker compose -f docker-compose.prod.yml exec -T caddy \
-            caddy reload --config /etc/caddy/Caddyfile
-
-          # 빌드마다 쌓이는 옛 이미지가 30GB 디스크를 채운다
-          docker image prune -f
-          SCRIPT
+          # 스크립트를 stdin으로 넘기지 않는다. docker compose run이 stdin을 먹는다
+          ssh -i ~/.ssh/deploy_key "$VM_USER@$VM_HOST" \
+            'cd ~/app && git fetch origin main && git reset --hard origin/main && bash deploy/remote-deploy.sh' \
+            < /dev/null
 
       - name: 상태 확인
         run: |
