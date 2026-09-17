@@ -19,6 +19,18 @@ export interface TourSpot {
   lclsSystm3: string | null;
 }
 
+/** 행사(searchFestival2) 1건. 날짜는 'YYYY-MM-DD' */
+export interface TourFestival {
+  contentId: string;
+  title: string;
+  address: string;
+  startDate: string;
+  endDate: string;
+  firstImage: string | null;
+  /** 행사 분류(전시회 EV030100 등). 취미에 맞는 행사를 앞에 둘 때 쓴다 */
+  lclsSystm3: string | null;
+}
+
 /** 대분류가 다른 코드를 함께 써야 해서(예: NA04 + VE03) 그룹으로 나눈다. */
 export interface CategoryGroup {
   lclsSystm1: string;

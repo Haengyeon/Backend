@@ -27,6 +27,7 @@ import {CourseReminderScheduler} from "./service/course-reminder.scheduler";
     TourApiClient,
     CourseReminderScheduler,
   ],
-  exports: [CourseGeneratorService],
+  // 홈 행사 목록(FestivalModule)도 같은 TourAPI 클라이언트를 쓴다
+  exports: [CourseGeneratorService, TourApiClient],
 })
 export class CourseModule {}
