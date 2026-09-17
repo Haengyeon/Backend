@@ -80,6 +80,13 @@ export interface CoursePlan {
   backtrackPenaltyKm: number;
   /** 체류 + 이동 합계(분) */
   durationMinutes: number;
+  /** 이동에만 드는 시간(분). 체류 시간은 빼고 */
+  moveMinutes: number;
+  /**
+   * 이동 시간이 하루 코스 예산 안에 드는지.
+   * false면 그 지역에서는 이만큼 움직이지 않고는 4곳을 못 채운다는 뜻이다.
+   */
+  withinMoveBudget: boolean;
 }
 
 export interface CourseBuildParams {

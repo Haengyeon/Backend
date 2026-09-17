@@ -18,29 +18,146 @@ import { PathScore, scorePath } from './path-score';
 import { THEME_FILTER, matchesFilter } from './tour-category';
 import { SlotSpec, TourSpot } from './types';
 
-/** 앵커 기준 탐색 반경 */
-export const RADIUS_STEPS_KM = [1, 2, 3, 4, 5];
+// ─── 탐색 반경 ────────────────────────────────────────────────────
+//
+// 반경은 고정값이 아니라 그 지역 후보가 얼마나 뭉쳐 있는지를 보고 정한다.
+// 시군구는 면적이 서울 중구 10km²부터 인제군 1,646km²까지 165배 차이 나서
+// 한 벌의 상수로 양쪽을 감당할 수 없다.
+//
+// 실측한 산포도(3번째 최근접 이웃까지 거리의 중앙값):
+//   서울 중구 0.23km · 수원시 0.35km · 화성시 1.05km · 울진군 4.81km · 인제군 6.75km
 
-/** 위 반경으로 못 찾았을 때의 확장 반경. 여기부터는 완화 사유를 기록한다. */
-export const RELAX_RADIUS_STEPS_KM = [7, 10];
+/** 반경 사다리의 배수. 기준 단위(아래)에 이 값을 곱해 단계를 만든다 */
+export const RADIUS_MULTIPLIERS = [1, 2, 3, 4, 5];
+
+/** 위 사다리로 못 찾았을 때의 확장 배수. 여기부터는 완화 사유를 기록한다 */
+export const RELAX_MULTIPLIERS = [7, 10];
+
+/**
+ * 기준 단위의 상·하한.
+ *
+ * 하한이 없으면 후보가 빽빽한 도심에서 1단계가 수십 미터가 되어 사다리를 헛돈다.
+ * 상한이 없으면 인제군이 33km짜리 사다리를 갖게 되는데, 그건 하루 코스가 아니다.
+ * 상한에 걸린 지역은 후보를 반경 밖에서 끌어오게 되고, 그 사실이 완화 사유로 남는다.
+ */
+export const MIN_RADIUS_UNIT_KM = 0.4;
+export const MAX_RADIUS_UNIT_KM = 3;
+
+/** 산포도를 잴 때 보는 이웃 번호. 한 슬롯을 채우려면 주변에 몇 곳은 있어야 한다 */
+const SPREAD_NEIGHBOR_RANK = 3;
 
 export const ANCHOR_TRIES = 15;
 
 /** 한 코스에 넣을 수 있는 섬 후보 수. 둘이면 사이를 배로 건너야 한다 */
 export const MAX_ISLAND_SPOTS = 1;
 
-/** 앵커 주변에 갈 곳이 있는지 재는 반경. 슬롯 탐색 반경의 끝과 맞춘다 */
-export const ANCHOR_NEIGHBOR_RADIUS_KM = 5;
-
-/** 앵커가 되려면 이 반경 안에 있어야 하는 다른 후보 수. 4곳을 도니 셋은 있어야 한다 */
+/** 앵커가 되려면 사다리 끝 반경 안에 있어야 하는 다른 후보 수. 4곳을 도니 셋은 있어야 한다 */
 export const ANCHOR_MIN_NEIGHBORS = 3;
 
 /** 슬롯당 조합 탐색에 넣을 후보 수 */
 export const CANDIDATES_PER_SLOT = 6;
 
-/** 다양성 선택에 넣을 코스의 상한 (총 이동거리 / 역주행 페널티) */
-export const ACCEPTABLE_TOTAL_KM = 4;
-export const ACCEPTABLE_BACKTRACK_KM = 0.5;
+/**
+ * 풀이 이보다 작으면 슬롯당 후보를 늘린다.
+ *
+ * 후보가 30건뿐인 시군구(인제·울진)는 조합이 사실상 하나로 수렴해서
+ * 재매칭해도 매번 같은 코스가 나왔다. 고를 것이 적을수록 더 넓게 봐야 한다.
+ */
+export const SMALL_POOL_SIZE = 60;
+export const CANDIDATES_PER_SLOT_SMALL = 10;
+
+/**
+ * 하루 코스로 인정하는 이동 시간 상한(분). 체류 시간은 빼고 이동만이다.
+ *
+ * 거리 대신 시간으로 재는 이유는 routeMoveMinutes 주석에 있다.
+ * 이 예산을 넘는 코스밖에 못 만드는 지역은 결제 전에 걸러야 한다(course-preflight).
+ */
+export const MOVE_MINUTES_BUDGET = 90;
+
+/**
+ * 다양성 선택에 넣을 코스의 상한.
+ *
+ * 절대 거리(예전: 4km)로 자르면 넓은 군은 어떤 코스도 통과하지 못해
+ * 다양성 선택 자체를 못 타고 늘 최단 코스 하나로 떨어졌다.
+ * 그 지역에서 실제로 나온 최단 코스를 기준으로 상대 평가한다.
+ */
+export const ACCEPTABLE_DISTANCE_RATIO = 1.3;
+
+/**
+ * 되돌아감 허용치. 총거리에 비례하되 짧은 코스를 위해 바닥을 둔다.
+ * 도보권 2km 코스에서 0.4km 되돌아감은 흔하지만 20km 코스에서는 오차다.
+ */
+export const ACCEPTABLE_BACKTRACK_RATIO = 0.2;
+export const ACCEPTABLE_BACKTRACK_FLOOR_KM = 0.5;
+
+/**
+ * 이 지역에서 쓸 탐색 설정. 풀을 한 번 훑어 정하고 선정 내내 쓴다.
+ */
+export interface SearchScale {
+  /** 기준 단위(km). 후보들이 얼마나 뭉쳐 있는지 */
+  unitKm: number;
+  /** 정상 탐색 반경 단계 */
+  stepsKm: number[];
+  /** 못 찾았을 때의 확장 반경 단계 */
+  relaxStepsKm: number[];
+  /** 슬롯당 조합에 넣을 후보 수 */
+  candidatesPerSlot: number;
+}
+
+/** 산포도 계산에 넣을 최대 표본. 중앙값이라 전수로 안 재도 값이 거의 안 변한다 */
+const SPREAD_SAMPLE_SIZE = 300;
+
+/**
+ * 후보들이 얼마나 뭉쳐 있는지 잰다.
+ *
+ * 각 후보에서 3번째로 가까운 이웃까지의 거리를 구하고 그 중앙값을 쓴다.
+ * "한 곳에 서면 주변 몇 km 안에 갈 만한 데가 셋쯤 있다"는 뜻이라
+ * 슬롯 하나를 채우는 데 필요한 반경과 바로 이어진다.
+ *
+ * 평균이 아니라 중앙값인 이유는 멀리 떨어진 섬 하나가 값을 통째로 끌어올리기 때문이다.
+ */
+function spreadUnitKm(pool: TourSpot[]): number {
+  const sample =
+    pool.length <= SPREAD_SAMPLE_SIZE
+      ? pool
+      : pool.filter(
+          (_, index) =>
+            index % Math.ceil(pool.length / SPREAD_SAMPLE_SIZE) === 0,
+        );
+
+  const distances: number[] = [];
+  for (const spot of sample) {
+    const neighbors = pool
+      .filter((other) => other.contentId !== spot.contentId)
+      .map((other) => haversineKm(spot, other))
+      .sort((a, b) => a - b);
+
+    if (neighbors.length >= SPREAD_NEIGHBOR_RANK) {
+      distances.push(neighbors[SPREAD_NEIGHBOR_RANK - 1]);
+    }
+  }
+
+  if (distances.length === 0) return MAX_RADIUS_UNIT_KM;
+
+  distances.sort((a, b) => a - b);
+  const median = distances[Math.floor(distances.length / 2)];
+
+  return Math.min(MAX_RADIUS_UNIT_KM, Math.max(MIN_RADIUS_UNIT_KM, median));
+}
+
+export function searchScaleOf(pool: TourSpot[]): SearchScale {
+  const unitKm = spreadUnitKm(pool);
+
+  return {
+    unitKm,
+    stepsKm: RADIUS_MULTIPLIERS.map((multiplier) => unitKm * multiplier),
+    relaxStepsKm: RELAX_MULTIPLIERS.map((multiplier) => unitKm * multiplier),
+    candidatesPerSlot:
+      pool.length < SMALL_POOL_SIZE
+        ? CANDIDATES_PER_SLOT_SMALL
+        : CANDIDATES_PER_SLOT,
+  };
+}
 
 export interface SelectedSpot {
   role: string;
@@ -52,6 +169,15 @@ export interface SelectedSpot {
 export interface SelectedCourse {
   spots: SelectedSpot[];
   totalDistanceKm: number;
+  /** 이동에만 드는 시간(분). 체류 시간은 빼고. */
+  moveMinutes: number;
+  /**
+   * 이동 시간이 하루 코스 예산 안에 드는지.
+   *
+   * false면 그 지역에서는 이만큼 움직이지 않고는 4곳을 못 채운다는 뜻이다.
+   * 결제 전 판정(course-preflight)이 이 값을 보고 거른다.
+   */
+  withinMoveBudget: boolean;
   /** 역주행 + 재방문 페널티 합(km 환산). 0이면 되돌아감 없는 동선. */
   backtrackPenaltyKm: number;
   /** 최소화 대상 점수 (이동거리 + 가중 페널티). 코스 간 비교용. */
@@ -122,21 +248,25 @@ function describeRelaxation(
   anchor: TourSpot,
   spot: TourSpot,
   source: CandidateSource,
+  scale: SearchScale,
 ): string | null {
   if (source === 'THEME') return '역할 후보 소진 -> 테마 기준 대체';
   if (source === 'ANY') return '테마 후보 소진 -> 지역 전체 최근접';
 
   const distanceKm = haversineKm(anchor, spot);
-  const maxNormal = RADIUS_STEPS_KM[RADIUS_STEPS_KM.length - 1];
+  const maxNormal = scale.stepsKm[scale.stepsKm.length - 1];
   if (distanceKm <= maxNormal) return null;
 
-  for (const radiusKm of RELAX_RADIUS_STEPS_KM) {
+  const round = (km: number) => km.toFixed(1);
+
+  for (const radiusKm of scale.relaxStepsKm) {
     if (distanceKm <= radiusKm) {
-      return `${maxNormal}km 내 후보 없음 -> ${radiusKm}km로 확장`;
+      return `${round(maxNormal)}km 내 후보 없음 -> ${round(radiusKm)}km로 확장`;
     }
   }
 
-  return `${RELAX_RADIUS_STEPS_KM[RELAX_RADIUS_STEPS_KM.length - 1]}km 내 후보 없음 -> 반경 무제한`;
+  const maxRelax = scale.relaxStepsKm[scale.relaxStepsKm.length - 1];
+  return `${round(maxRelax)}km 내 후보 없음 -> 반경 무제한`;
 }
 
 /**
@@ -152,6 +282,7 @@ function collectSlotCandidates(
   anchor: TourSpot,
   theme: CourseTheme,
   seed: string,
+  scale: SearchScale,
 ): SlotCandidates | null {
   const matching = pool.filter(
     (spot) =>
@@ -161,7 +292,7 @@ function collectSlotCandidates(
   if (matching.length > 0) {
     return {
       spec,
-      list: buildList(matching, anchor, seed, spec),
+      list: buildList(matching, anchor, seed, spec, scale),
       source: 'ROLE',
     };
   }
@@ -174,7 +305,7 @@ function collectSlotCandidates(
   if (byTheme.length > 0) {
     return {
       spec,
-      list: buildList(byTheme, anchor, seed, spec),
+      list: buildList(byTheme, anchor, seed, spec, scale),
       source: 'THEME',
     };
   }
@@ -183,7 +314,7 @@ function collectSlotCandidates(
   if (anySpot.length > 0) {
     return {
       spec,
-      list: buildList(anySpot, anchor, seed, spec),
+      list: buildList(anySpot, anchor, seed, spec, scale),
       source: 'ANY',
     };
   }
@@ -200,17 +331,18 @@ function buildList(
   anchor: TourSpot,
   seed: string,
   spec: SlotSpec,
+  scale: SearchScale,
 ): TourSpot[] {
-  for (const radiusKm of RADIUS_STEPS_KM) {
+  for (const radiusKm of [...scale.stepsKm, ...scale.relaxStepsKm]) {
     const near = matching.filter(
       (spot) => haversineKm(anchor, spot) <= radiusKm,
     );
-    if (near.length >= CANDIDATES_PER_SLOT) {
-      return rank(near, seed, spec).slice(0, CANDIDATES_PER_SLOT);
+    if (near.length >= scale.candidatesPerSlot) {
+      return rank(near, seed, spec).slice(0, scale.candidatesPerSlot);
     }
   }
 
-  const maxNormal = RADIUS_STEPS_KM[RADIUS_STEPS_KM.length - 1];
+  const maxNormal = scale.stepsKm[scale.stepsKm.length - 1];
   const within = rank(
     matching.filter((spot) => haversineKm(anchor, spot) <= maxNormal),
     seed,
@@ -221,7 +353,7 @@ function buildList(
     anchor,
   );
 
-  return [...within, ...outside].slice(0, CANDIDATES_PER_SLOT);
+  return [...within, ...outside].slice(0, scale.candidatesPerSlot);
 }
 
 interface ScoredCombination {
@@ -317,24 +449,31 @@ function bestCombination(
 /**
  * 주변에 갈 곳이 없는 앵커 후보를 걸러낸다.
  *
- * 앵커는 도 전체 풀에서 뽑는다. 매칭이 시·도까지만 정해 주고 두 사람이 어디 사는지는
- * 알 수 없기 때문이다. 그런데 강원·경북처럼 넓은 도는 후보가 200km 넘게 흩어져 있어서
- * (실측: 강원 삼척~철원 226km, 경북은 울릉도까지 2370km) 혼자 떨어진 곳이 앵커가 되면
- * 나머지 세 자리를 반경 밖에서 끌어오게 된다. buildList가 5km 안에 후보가 모자라면
- * 가까운 순으로 밖에서 채우기 때문에, 하루에 못 도는 코스가 조용히 만들어진다.
+ * 풀은 시군구로 좁혀져 있지만(#68) 그 안에서도 후보가 고르게 퍼져 있지는 않다.
+ * 인제군처럼 넓은 군은 한쪽 끝의 외딴 폭포가 앵커가 될 수 있고, 그러면 나머지
+ * 세 자리를 전부 반경 밖에서 끌어오게 된다. buildList가 사다리 안에 후보가
+ * 모자라면 가까운 순으로 밖에서 채우기 때문에, 하루에 못 도는 코스가 조용히 만들어진다.
  *
  * 사용자 위치를 모르니 "관광지가 뭉쳐 있는 곳"을 대신 기준으로 삼는다.
  * 서울처럼 어디나 밀집한 지역은 거의 다 통과해서 영향이 없고,
- * 도 단위에서는 시내·관광 거점이 자연히 앞으로 온다.
+ * 넓은 군에서는 읍내·관광 거점이 자연히 앞으로 온다.
  *
- * 뭉친 곳이 하나도 없으면 거르지 않는다. 결제가 끝난 뒤라 빈 코스를 낼 수는 없다.
+ * 뭉친 곳이 하나도 없으면 거르지 않는다. 빈 코스를 낼 수는 없기 때문이다.
+ * 그런 지역은 애초에 결제 전 판정에서 걸러지는 것이 맞다.
  */
-function clustered(candidates: TourSpot[], pool: TourSpot[]): TourSpot[] {
+function clustered(
+  candidates: TourSpot[],
+  pool: TourSpot[],
+  scale: SearchScale,
+): TourSpot[] {
+  // 사다리 끝까지 봐서 이웃이 없으면 어떤 조합으로도 뭉치지 않는다
+  const radiusKm = scale.stepsKm[scale.stepsKm.length - 1];
+
   const hasNeighbors = (anchor: TourSpot) => {
     let count = 0;
     for (const spot of pool) {
       if (spot.contentId === anchor.contentId) continue;
-      if (haversineKm(anchor, spot) > ANCHOR_NEIGHBOR_RADIUS_KM) continue;
+      if (haversineKm(anchor, spot) > radiusKm) continue;
       if (++count >= ANCHOR_MIN_NEIGHBORS) return true;
     }
     return false;
@@ -362,10 +501,14 @@ export function selectCourse(
   const pool = sanitizePool(rawPool);
   const template = templateFor(theme);
 
+  // 반경은 이 지역 후보가 얼마나 뭉쳐 있는지 보고 정한다. 한 번만 재서 끝까지 쓴다
+  const scale = searchScaleOf(pool);
+
   let anchors = rank(
     clustered(
       pool.filter((spot) => matchesFilter(spot, template[0].filter)),
       pool,
+      scale,
     ),
     seed,
     template[0],
@@ -378,6 +521,7 @@ export function selectCourse(
       clustered(
         pool.filter((spot) => matchesFilter(spot, THEME_FILTER[theme])),
         pool,
+        scale,
       ),
       seed,
     ).slice(0, ANCHOR_TRIES);
@@ -386,7 +530,7 @@ export function selectCourse(
 
   // 테마에 맞는 곳이 지역에 하나도 없어도 빈 코스를 낼 수는 없다
   if (anchors.length === 0) {
-    anchors = rank(clustered(pool, pool), seed).slice(0, ANCHOR_TRIES);
+    anchors = rank(clustered(pool, pool, scale), seed).slice(0, ANCHOR_TRIES);
     anchorRelaxation = '테마 후보 없음 -> 지역 전체에서 앵커 선정';
   }
 
@@ -402,6 +546,7 @@ export function selectCourse(
           anchor,
           theme,
           seed,
+          scale,
         );
         if (!candidates) break;
         slots.push(candidates);
@@ -421,9 +566,16 @@ export function selectCourse(
           relaxation:
             index === 0
               ? anchorRelaxation
-              : describeRelaxation(anchor, spot, slots[index - 1].source),
+              : describeRelaxation(
+                  anchor,
+                  spot,
+                  slots[index - 1].source,
+                  scale,
+                ),
         })),
         totalDistanceKm: combination.path.totalDistanceKm,
+        moveMinutes: combination.path.moveMinutes,
+        withinMoveBudget: combination.path.moveMinutes <= MOVE_MINUTES_BUDGET,
         backtrackPenaltyKm:
           combination.path.reversalKm + combination.path.revisitKm,
         score: combination.path.score,
@@ -443,11 +595,23 @@ export function selectCourse(
 
   if (courses.length === 0) return null;
 
+  // 기준을 그 지역에서 실제로 나온 최단 코스에 건다.
+  // 절대 거리로 자르면 넓은 군은 어떤 코스도 통과하지 못해 다양성 선택을 못 탄다
+  const shortestKm = Math.min(
+    ...courses.map((course) => course.totalDistanceKm),
+  );
+  const distanceLimitKm = shortestKm * ACCEPTABLE_DISTANCE_RATIO;
+
   // 거리만 보면 되돌아가는 경로가 섞여 들어온다
   const acceptable = courses.filter(
     (course) =>
-      course.totalDistanceKm <= ACCEPTABLE_TOTAL_KM &&
-      course.backtrackPenaltyKm <= ACCEPTABLE_BACKTRACK_KM,
+      course.withinMoveBudget &&
+      course.totalDistanceKm <= distanceLimitKm &&
+      course.backtrackPenaltyKm <=
+        Math.max(
+          ACCEPTABLE_BACKTRACK_FLOOR_KM,
+          course.totalDistanceKm * ACCEPTABLE_BACKTRACK_RATIO,
+        ),
   );
 
   if (acceptable.length === 0) {
