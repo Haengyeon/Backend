@@ -18,6 +18,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CourseTheme, Hobby } from '../../generated/prisma/enums';
+import {
+  decodeOffsetCursor,
+  encodeOffsetCursor,
+} from '../../common/offset-cursor.util';
 import { THEME_ORDER, totalAffinity } from '../algorithm/affinity';
 import { categoryLabelOf, regionFromAddress } from '../algorithm/labels';
 import { sanitizePool } from '../algorithm/first-date-policy';
@@ -71,7 +75,7 @@ export class CourseRecommendService {
       Math.max(query.limit ?? RECOMMEND_DEFAULT_LIMIT, 1),
       RECOMMEND_MAX_LIMIT,
     );
-    const offset = decodeCursor(query.cursor);
+    const offset = decodeOffsetCursor(query.cursor);
 
     const themes = await this.themesFromHobbies(userId);
     const pool = await this.loadPool(themes);
@@ -85,7 +89,7 @@ export class CourseRecommendService {
 
     return {
       items: page.map((spot) => this.toDto(spot)),
-      nextCursor: hasMore ? encodeCursor(offset + take) : null,
+      nextCursor: hasMore ? encodeOffsetCursor(offset + take) : null,
       hasMore,
     };
   }
@@ -192,25 +196,4 @@ function rank(spots: TourSpot[]): TourSpot[] {
     if (landmark !== 0) return landmark;
     return a.contentId.localeCompare(b.contentId);
   });
-}
-
-/** 커서는 목록에서 몇 번째부터 볼지만 담는다 */
-function encodeCursor(offset: number): string {
-  return Buffer.from(JSON.stringify({ offset })).toString('base64');
-}
-
-function decodeCursor(cursor?: string): number {
-  if (!cursor) return 0;
-
-  try {
-    const parsed = JSON.parse(Buffer.from(cursor, 'base64').toString()) as {
-      offset?: unknown;
-    };
-    return typeof parsed.offset === 'number' && parsed.offset >= 0
-      ? parsed.offset
-      : 0;
-  } catch {
-    // 손으로 아무 값이나 넣어도 첫 페이지를 보여준다
-    return 0;
-  }
 }

@@ -2,12 +2,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Region } from '../../generated/prisma/enums';
 import { AREA_CODE, PoolQuery } from './tour-category';
-import { TourSpot } from './types';
+import { TourFestival, TourSpot } from './types';
 
 const BASE_URL = 'https://apis.data.go.kr/B551011/KorService2';
 
 /** 조회 1건당 후보 수. 서울 FD가 1000건이 넘어 100건이면 편중된다. */
 const NUM_OF_ROWS = 200;
+
+/** 그날 진행 중인 행사는 수십~수백 건이라 한 페이지로 받는다 */
+const FESTIVAL_NUM_OF_ROWS = 1000;
 
 const TIMEOUT_MS = 5000;
 
@@ -47,6 +50,13 @@ function toPlainText(value: unknown): string | null {
   return text.length > 0 ? text : null;
 }
 
+/** TourAPI 날짜('20260917')를 'YYYY-MM-DD'로. 형식이 다르면 null */
+function toIsoDate(value: unknown): string | null {
+  if (typeof value !== 'string' || !/^\d{8}$/.test(value)) return null;
+
+  return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+}
+
 /** TourAPI 원본 응답 1건. 필드명이 전부 소문자인 것에 주의. */
 interface RawTourItem {
   contentid?: string;
@@ -64,6 +74,9 @@ interface RawTourItem {
   lclsSystm1?: string;
   lclsSystm2?: string;
   lclsSystm3?: string;
+  /** 행사 조회(searchFestival2)에만 온다. 'YYYYMMDD' */
+  eventstartdate?: string;
+  eventenddate?: string;
 }
 
 @Injectable()
@@ -186,6 +199,69 @@ export class TourApiClient {
     }
   }
 
+  /**
+   * 그날 진행 중인 행사를 전국에서 받아온다.
+   *
+   * 시작일만 주면 아직 안 열린 행사까지 오므로 종료일에도 같은 날을 준다.
+   * 실패는 null이다. 빈 목록과 구분해야 호출하는 쪽이 실패를 캐시하지 않는다.
+   */
+  async fetchOngoingFestivals(date: string): Promise<TourFestival[] | null> {
+    const day = date.replace(/-/g, '');
+    const params = new URLSearchParams({
+      MobileOS: 'ETC',
+      MobileApp: 'Haengyeon',
+      _type: 'json',
+      numOfRows: String(FESTIVAL_NUM_OF_ROWS),
+      pageNo: '1',
+      // 대표이미지 보유 순
+      arrange: 'R',
+      eventStartDate: day,
+      eventEndDate: day,
+    });
+
+    const url = `${BASE_URL}/searchFestival2?serviceKey=${this.encodedServiceKey}&${params}`;
+
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        this.logger.warn(
+            `TourAPI 행사 응답 실패 (${response.status}) date=${day}`,
+        );
+        return null;
+      }
+
+      const body = await response.json();
+      const header = body?.response?.header;
+      // 필수값 누락 같은 오류도 200으로 온다. 결과 코드를 봐야 빈 목록과 구분된다
+      if (header?.resultCode !== '0000') {
+        this.logger.warn(
+            `TourAPI 행사 조회 오류 date=${day}: ${header?.resultMsg ?? body?.resultMsg}`,
+        );
+        return null;
+      }
+
+      const total = Number(body.response.body?.totalCount);
+      if (total > FESTIVAL_NUM_OF_ROWS) {
+        this.logger.warn(
+            `진행 중 행사 ${total}건 중 ${FESTIVAL_NUM_OF_ROWS}건만 받았습니다. date=${day}`,
+        );
+      }
+
+      // 결과가 없으면 items가 빈 문자열('')로 온다
+      const items = body.response.body?.items?.item;
+      if (!Array.isArray(items)) return [];
+
+      return items
+          .map((item: RawTourItem) => this.toTourFestival(item))
+          .filter((festival): festival is TourFestival => festival !== null);
+    } catch (error) {
+      this.logger.warn(`TourAPI 행사 호출 실패 date=${day}: ${error}`);
+      return null;
+    }
+  }
+
   private async fetchOne(
       areaCode: string | undefined,
       query: PoolQuery,
@@ -296,5 +372,23 @@ export class TourApiClient {
     }
 
     return `${sido}${sigungu}`;
+  }
+
+  private toTourFestival(item: RawTourItem): TourFestival | null {
+    const startDate = toIsoDate(item.eventstartdate);
+    const endDate = toIsoDate(item.eventenddate);
+
+    // 기간이 없으면 진행 중인지 판단할 수 없다
+    if (!item.contentid || !item.title || !startDate || !endDate) return null;
+
+    return {
+      contentId: item.contentid,
+      title: item.title,
+      address: item.addr1 ?? '',
+      startDate,
+      endDate,
+      firstImage: item.firstimage || null,
+      lclsSystm3: item.lclsSystm3 || null,
+    };
   }
 }
