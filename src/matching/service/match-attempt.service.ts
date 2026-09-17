@@ -9,6 +9,7 @@ import {
 
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+    CourseTheme,
     MatchAttemptStatus,
     MatchDecision,
     MatchingStatus,
@@ -22,6 +23,7 @@ import {
 import { MatchingPenaltyService } from './matching-penalty.service';
 import {calcAge} from "../../common/age.util";
 import { MATCHING_PAYMENT_AMOUNT } from "../../common/payment.constant";
+import { CourseGeneratorService } from '../../course/algorithm/course-generator.service';
 
 const PAYMENT_WINDOW_MS = 6 * 60 * 60 * 1000; // 결제 유예 6시간
 
@@ -34,6 +36,7 @@ export class MatchAttemptService {
         private readonly penalty: MatchingPenaltyService,
         private readonly matchingEngine: MatchingEngineService,
         private readonly notification: NotificationService,
+        private readonly courseGenerator: CourseGeneratorService,
     ) {}
 
     async findOne(userId: string, matchAttemptId: string) {
@@ -98,6 +101,61 @@ export class MatchAttemptService {
     }
 
 
+    /**
+     * 사전 판정에서 시도할 테마 순서.
+     *
+     * 매칭이 정한 테마가 먼저다. 그게 되면 거기서 멈추므로 보통 TourAPI를 한 번만 부른다.
+     * 안 되면 두 사람이 함께 고른 테마, 그다음 각자 고른 테마 순으로 내려간다.
+     * 아무도 안 고른 테마까지 가지는 않는다 — 코스는 나와도 원하지 않은 하루가 된다.
+     */
+    private themeCandidates(attempt: {
+        theme: CourseTheme;
+        matchingA: { themes: CourseTheme[] };
+        matchingB: { themes: CourseTheme[] };
+    }): CourseTheme[] {
+        const shared = attempt.matchingA.themes.filter((t) =>
+            attempt.matchingB.themes.includes(t),
+        );
+        const either = [...attempt.matchingA.themes, ...attempt.matchingB.themes];
+
+        return [...new Set([attempt.theme, ...shared, ...either])];
+    }
+
+    /**
+     * 어떤 테마로도 코스가 안 나올 때. 결제로 넘기지 않고 매칭을 되돌린다.
+     *
+     * 양쪽 다 잘못한 게 없으므로 거절 횟수를 올리지 않는다. 둘 다 바로 재탐색으로
+     * 돌려보내고, 다음 후보는 다른 지역·테마로 잡힐 수 있다.
+     */
+    private async cancelUnbuildable(
+        attemptId: string,
+        myMatchingId: string,
+        otherMatchingId: string,
+    ) {
+        const cancelled = await this.prisma.$transaction(async (tx) => {
+            const updated = await tx.matchAttempt.update({
+                where: { id: attemptId },
+                data: { status: MatchAttemptStatus.CANCELLED },
+            });
+
+            await this.penalty.releaseWithoutPenalty(tx, myMatchingId);
+            await this.penalty.releaseWithoutPenalty(tx, otherMatchingId);
+
+            return updated;
+        });
+
+        // 둘 다 조건 그대로 다시 후보를 찾는다
+        for (const matchingId of [myMatchingId, otherMatchingId]) {
+            this.matchingEngine
+                .tryMatch(matchingId)
+                .catch((error) =>
+                    this.logger.error('코스 불가로 취소 후 재탐색 중 오류', error as Error),
+                );
+        }
+
+        return cancelled;
+    }
+
     async respond(
         userId: string,
         matchAttemptId: string,
@@ -142,6 +200,30 @@ export class MatchAttemptService {
         // myMatching = 지금 응답을 보내는 사람 / otherMatching = 상대방
         const myMatching = isSideA ? attempt.matchingA : attempt.matchingB;
         const otherMatching = isSideA ? attempt.matchingB : attempt.matchingA;
+
+        // 이 응답으로 결제 단계에 들어가는지. 상대가 이미 수락해 뒀으면 그렇다.
+        // (거절이면 위에서 이미 걸러졌으므로, 상대 응답이 있다면 반드시 ACCEPTED)
+        const entersPayment =
+            dto.decision === MatchDecision.ACCEPTED &&
+            attempt.responses.some((r) => r.userId === otherMatching.userId);
+
+        // 결제로 넘기기 전에 코스를 만들 수 있는지 본다.
+        // TourAPI를 부르므로 트랜잭션 밖에서 해야 한다 — 안에서 하면 그동안 락을 쥔다.
+        const preflight = entersPayment
+            ? await this.courseGenerator.preflight(
+                  attempt.region,
+                  attempt.sigunguCode,
+                  this.themeCandidates(attempt),
+              )
+            : null;
+
+        if (preflight && !preflight.ok) {
+            this.logger.warn(
+                `코스를 만들 수 없어 결제로 넘기지 않음: attempt=${attempt.id} ` +
+                `region=${attempt.region}/${attempt.sigunguCode}`,
+            );
+            return this.cancelUnbuildable(attempt.id, myMatching.id, otherMatching.id);
+        }
 
         const result = await this.prisma.$transaction(async (tx) => {
             await tx.matchResponse.create({
@@ -191,6 +273,10 @@ export class MatchAttemptService {
                 data: {
                     status: MatchAttemptStatus.PAYMENT_PENDING,
                     paymentDeadlineAt,
+                    // 원래 테마로 코스가 안 나오면 판정이 대체 테마를 골라 준다
+                    ...(preflight && preflight.theme !== attempt.theme && {
+                        theme: preflight.theme,
+                    }),
                 },
             });
 

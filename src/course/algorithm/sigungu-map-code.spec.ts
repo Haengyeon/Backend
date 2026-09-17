@@ -3,7 +3,6 @@
 import {
   MAP_SIGUNGU_CODE,
   MAP_SIGUNGU_TOTAL,
-  lumpedCellNameOf,
   mapSigunguCodeOf,
 } from './sigungu-map-code';
 
@@ -87,20 +86,5 @@ describe('표 정합성', () => {
     // southkorea-maps kostat/2018의 시군구 250개를 하나도 빠짐없이 덮어야 한다.
     // 한 칸이라도 비면 그 지역은 스탬프를 영영 못 받는다
     expect(MAP_SIGUNGU_TOTAL).toBe(250);
-  });
-});
-
-describe('lumpedCellNameOf', () => {
-  it('지도가 구를 안 나눠 그린 칸은 칸 이름을 준다', () => {
-    // 부천 원미구를 다녀와도 칠해지는 건 부천시 전체다.
-    // 목록에만 "원미구"라고 적으면 지도와 어긋나 보인다
-    expect(lumpedCellNameOf('31050')).toBe('부천시');
-    expect(lumpedCellNameOf('23010')).toBe('중구');
-    expect(lumpedCellNameOf('23080')).toBe('서구');
-  });
-
-  it('보통 칸은 null이다', () => {
-    // null이면 시군구 이름표를 그대로 쓴다
-    expect(lumpedCellNameOf('11010')).toBeNull(); // 서울 종로구
   });
 });

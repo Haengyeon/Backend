@@ -18,12 +18,14 @@ export class StampDto {
   sigunguName: string | null;
 
   @ApiProperty({
-    example: '11020',
+    type: [String],
+    example: ['31011', '31012', '31013', '31014'],
     description:
-      '지도에서 칠할 칸. 지도 파일(southkorea-maps kostat/2018)의 SIG_CD와 맞춰져 있다. ' +
-      '수집 지도는 이 값들을 모아 색칠하면 된다',
+      '지도에서 칠할 칸 전부. 지도 파일(southkorea-maps kostat/2018)의 SIG_CD와 맞춰져 있다. ' +
+      '스탬프 하나가 여러 칸일 수 있다 — 지도가 수원시를 4구로 나눠 그리기 때문이다. ' +
+      '수집 지도는 이 값들을 모두 모아 색칠하면 된다',
   })
-  mapSigunguCode: string;
+  mapSigunguCodes: string[];
 
   @ApiProperty({ description: '이 스탬프를 준 코스' })
   courseId: string;
@@ -37,15 +39,17 @@ export class StampCollectionResponseDto {
   collectedCount: number;
 
   @ApiProperty({
-    example: 250,
-    description: '지도 전체 칸 수. collectedCount와 함께 수집률이 된다',
+    example: 229,
+    description:
+      '스탬프를 찍을 수 있는 시군구 수. collectedCount와 함께 수집률이 된다. ' +
+      '지도 칸 수(250)가 아니다 — 매칭에서 고르는 단위가 시군구라 칸으로 세면 100%가 안 나온다',
   })
   totalCount: number;
 
   @ApiProperty({
     example: 2,
     description:
-      '스탬프가 걸쳐 있는 시·도 수. 250칸 기준으로는 진척이 잘 안 보여서 ' +
+      '스탬프가 걸쳐 있는 시·도 수. 229곳 기준으로는 진척이 잘 안 보여서 ' +
       '"17곳 중 2곳"을 같이 낼 수 있게 둔다',
   })
   regionCount: number;

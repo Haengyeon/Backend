@@ -6,7 +6,8 @@
 // 리워드 도메인 담당이 정해지면 이 파일째로 옮기면 된다.
 import { Injectable } from '@nestjs/common';
 import { PointTransactionType, Region } from '../../generated/prisma/enums';
-import { mapSigunguCodeOf } from '../algorithm/sigungu-map-code';
+import { isStampableSigungu } from '../algorithm/sigungu-cells';
+import { normalizeSigunguCode } from '../algorithm/sigungu-name';
 import { TxClient } from '../prisma-tx.type';
 
 // 지급 액수는 아직 정해지지 않았다. 정책이 확정되면 여기만 바꾸면 된다.
@@ -49,38 +50,37 @@ export class CourseRewardService {
   }
 
   /**
-   * 코스가 지나간 시군구마다 스탬프. 이미 가진 칸은 건너뛴다.
+   * 코스가 지나간 시군구마다 스탬프. 이미 가진 곳은 건너뛴다.
    *
-   * 한 코스가 여러 구에 걸치는 일이 흔해서(중구 3곳 + 종로구 1곳)
-   * 한 번에 여러 개가 나올 수 있고, 네 곳이 모두 같은 구면 하나만 나온다.
+   * 매칭이 시군구 단위로 성사되고 후보 풀도 그 범위라 보통 하나만 나온다.
+   * 경계에 걸친 장소가 섞이면 여러 개가 나올 수 있다.
    *
-   * @returns 이번에 새로 찍힌 것만. 이미 있던 칸은 안 들어간다
+   * @returns 이번에 새로 찍힌 것만. 이미 있던 곳은 안 들어간다
    */
   private async grantStamps(
     tx: TxClient,
     userId: string,
     course: { id: string; region: Region; spots: StampSource[] },
   ) {
-    const visited = this.visitedSigungu(course.spots);
+    const visited = this.visitedSigungu(course.region, course.spots);
     if (visited.length === 0) return [];
 
     const owned = await tx.stamp.findMany({
       where: {
         userId,
-        mapSigunguCode: { in: visited.map((place) => place.mapSigunguCode) },
+        region: course.region,
+        sigunguCode: { in: visited.map((place) => place.sigunguCode) },
       },
-      select: { mapSigunguCode: true },
+      select: { sigunguCode: true },
     });
 
-    const ownedCodes = new Set(owned.map((stamp) => stamp.mapSigunguCode));
-    const fresh = visited.filter(
-      (place) => !ownedCodes.has(place.mapSigunguCode),
-    );
+    const ownedCodes = new Set(owned.map((stamp) => stamp.sigunguCode));
+    const fresh = visited.filter((place) => !ownedCodes.has(place.sigunguCode));
 
     if (fresh.length === 0) return [];
 
     // skipDuplicates는 위 검사와 겹치지만, 두 코스가 같은 순간에 닫히면
-    // 검사와 삽입 사이에 같은 칸이 들어올 수 있어 남겨 둔다.
+    // 검사와 삽입 사이에 같은 곳이 들어올 수 있어 남겨 둔다.
     return tx.stamp.createManyAndReturn({
       data: fresh.map((place) => ({
         userId,
@@ -95,37 +95,36 @@ export class CourseRewardService {
   /**
    * 코스가 걸친 시군구를 방문 순서대로 훑으면서 중복을 뺀다.
    *
-   * 묶는 기준은 지도 칸(mapSigunguCode)이다. 행정구역 표준코드로 묶으면 부천시
-   * 원미구와 소사구가 서로 다른 것으로 세어지는데, 지도에는 부천시 한 칸뿐이라
-   * "스탬프 2개, 칠해진 칸 1개"가 된다.
+   * 묶는 기준은 시군구다. 사용자가 매칭에서 고르는 단위와 같아야
+   * "어디를 가면 채워지는지"가 말이 된다.
    *
-   * 같은 칸에 여러 구가 들어오면 먼저 나온 쪽 이름이 남는다. 부천 원미구를
-   * 먼저 들렀으면 목록에는 "부천시 원미구"로 뜨고 지도는 부천시가 칠해진다.
+   * 지도 칸으로 묶으면 안 된다. 수원 장안구와 영통구가 따로 세어지는데
+   * 사용자가 고른 건 "수원시" 하나뿐이라 나머지 칸을 채울 방법이 없어진다.
+   * 반대로 부천 원미구와 소사구는 한 칸이라 스탬프 2개에 칠해진 칸 1개가 된다.
    */
-  private visitedSigungu(spots: StampSource[]) {
-    const byMapCode = new Map<
+  private visitedSigungu(region: Region, spots: StampSource[]) {
+    const bySigungu = new Map<
       string,
-      { sigunguCode: string; legalSigunguCode: string; mapSigunguCode: string }
+      { sigunguCode: string; legalSigunguCode: string | null }
     >();
 
     for (const spot of spots) {
-      // 칠할 칸을 못 찾으면 스탬프도 못 찍는다. TourAPI가 코드를 안 준
-      // 장소이거나 대응표에 없는 코드다. 엉뚱한 칸에 찍는 것보다 거르는 게 낫다.
-      const mapSigunguCode = mapSigunguCodeOf(spot.legalSigunguCode);
-      if (!mapSigunguCode || !spot.sigunguCode || !spot.legalSigunguCode) {
-        continue;
-      }
+      // 폐지된 코드는 현행으로 옮긴다. 마산시로 찍으면 창원시와 따로 쌓인다
+      const sigunguCode = normalizeSigunguCode(region, spot.sigunguCode);
 
-      if (!byMapCode.has(mapSigunguCode)) {
-        byMapCode.set(mapSigunguCode, {
-          sigunguCode: spot.sigunguCode,
+      // 지도에 칸이 없는 코드면 스탬프도 안 찍는다. 찍어 봐야 안 칠해지는데
+      // 수집 개수만 올라가서, 사용자 눈에는 지도가 고장 난 것으로 보인다.
+      if (!sigunguCode || !isStampableSigungu(region, sigunguCode)) continue;
+
+      if (!bySigungu.has(sigunguCode)) {
+        bySigungu.set(sigunguCode, {
+          sigunguCode,
           legalSigunguCode: spot.legalSigunguCode,
-          mapSigunguCode,
         });
       }
     }
 
-    return [...byMapCode.values()];
+    return [...bySigungu.values()];
   }
 
   /**

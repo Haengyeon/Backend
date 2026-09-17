@@ -2,7 +2,7 @@
 // 거리만 보면 짧게 왔다갔다 하는 W자 동선이 안 걸러져서
 // 방향 전환(역주행)과 되돌아옴을 벌점으로 더한다
 // 거리 재기는 geo.ts, 이 점수로 조합을 고르는 건 spot-selection.ts
-import { haversineKm } from './geo';
+import { estimateMoveMinutes, haversineKm } from './geo';
 import { TourSpot } from './types';
 
 // score = 총거리 + 2.5 x 역주행 + 1.5 x 되돌아옴
@@ -28,6 +28,24 @@ export function routeLengthKm(spots: TourSpot[]): number {
   let total = 0;
   for (let i = 1; i < spots.length; i++) {
     total += haversineKm(spots[i - 1], spots[i]);
+  }
+  return total;
+}
+
+/**
+ * 코스를 도는 데 드는 이동 시간(분).
+ *
+ * 거리(km)로 재면 지역끼리 비교가 안 된다. 인제군 22km는 차로 한 시간이고
+ * 서울 5km는 15분인데, 같은 잣대로 "5km 이하만 좋은 코스"라고 하면
+ * 넓은 군은 무슨 수를 써도 통과하지 못한다.
+ *
+ * 구간마다 따로 재서 더한다. 총거리로 한 번에 재면 짧은 구간 여럿이
+ * 긴 구간 하나로 뭉뚱그려져 실제보다 짧게 나온다.
+ */
+export function routeMoveMinutes(spots: TourSpot[]): number {
+  let total = 0;
+  for (let i = 1; i < spots.length; i++) {
+    total += estimateMoveMinutes(haversineKm(spots[i - 1], spots[i]));
   }
   return total;
 }
@@ -90,6 +108,8 @@ export interface PathScore {
   // 최소화 대상. 낮을수록 좋은 경로
   score: number;
   totalDistanceKm: number;
+  /** 이동에만 드는 시간(분). 체류 시간은 안 들어 있다 */
+  moveMinutes: number;
   reversalKm: number;
   revisitKm: number;
 }
@@ -105,6 +125,7 @@ export function scorePath(spots: TourSpot[]): PathScore {
       REVERSAL_WEIGHT * reversalKm +
       REVISIT_WEIGHT * revisitKm,
     totalDistanceKm,
+    moveMinutes: routeMoveMinutes(spots),
     reversalKm,
     revisitKm,
   };

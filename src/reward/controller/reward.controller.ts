@@ -57,10 +57,11 @@ export class RewardController {
   @ApiOperation({
     summary: '수집 스탬프 조회',
     description:
-      '모은 스탬프 전부. 기록 탭 수집 지도는 stamps[].mapSigunguCode를 모아 칠하고, ' +
+      '모은 스탬프 전부. 기록 탭 수집 지도는 stamps[].mapSigunguCodes를 모두 모아 칠하고, ' +
       '마이페이지는 collectedCount를 쓴다. ' +
-      '스탬프는 시군구 단위라 한 코스로 여러 개가 나올 수 있고, 같은 구는 한 번만 찍힌다. ' +
-      '페이징하지 않는다 — 상한이 지도 칸 수(250)고 지도는 전부를 한 번에 칠해야 한다.',
+      '스탬프는 시군구 단위다. 같은 시군구는 한 번만 찍히고, 스탬프 하나가 지도 칸 여러 개일 수 있다 ' +
+      '— 지도가 수원시를 4구로 나눠 그리기 때문이다. ' +
+      '페이징하지 않는다 — 상한이 시군구 수(229)고 지도는 전부를 한 번에 칠해야 한다.',
   })
   getStamps(
     @CurrentUser() userId: string,

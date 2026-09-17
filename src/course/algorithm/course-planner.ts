@@ -93,5 +93,7 @@ export function buildCoursePlan(
     totalDistanceKm: course.totalDistanceKm,
     backtrackPenaltyKm: course.backtrackPenaltyKm,
     durationMinutes,
+    moveMinutes: course.moveMinutes,
+    withinMoveBudget: course.withinMoveBudget,
   };
 }
