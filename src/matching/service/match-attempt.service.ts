@@ -103,14 +103,15 @@ export class MatchAttemptService {
         matchAttemptId: string,
         dto: MatchAttemptDto,
     ) {
-        const attempt = await this.prisma.matchAttempt.findUnique({
-            where: { id: matchAttemptId },
-            include: {
-                matchingA: true,
-                matchingB: true,
-                responses: true,
-            },
-        });
+        const attempt =
+            await this.prisma.matchAttempt.findUnique({
+                where: { id: matchAttemptId},
+                include: {
+                    matchingA: { include: { user: { select: { isDummy: true,},},},},
+                    matchingB: { include: { user: { select: { isDummy: true,},},},},
+                    responses: true,
+                },
+            });
 
         if (!attempt) {
             throw new NotFoundException('매칭 시도를 찾을 수 없습니다.');
@@ -159,14 +160,39 @@ export class MatchAttemptService {
                 });
 
                 // 거절한 쪽(나): 하루 카운트 +1, 한도 도달 시 EXHAUSTED, 아니면 RETRY_READY
-                await this.penalty.applyPenalty(tx, myMatching.id);
+                await this.penalty.applyPenalty(
+                    tx,
+                    myMatching.id,
+                );
 
-                // 거절당한 쪽(상대): 카운트 변화 없이 즉시 재탐색 가능 상태로 복귀
-                await this.penalty.releaseWithoutPenalty(tx, otherMatching.id);
+                let requeueMatchingId: string | null = null;
+
+                /*
+                 * 실제 상대라면 기존 동작:
+                 * 거절당한 사람은 잘못이 없으므로
+                 * penalty 없이 SEARCHING으로 복귀한다.
+                 *
+                 * 더미라면:
+                 * SEARCHING으로 돌려놓지 않는다.
+                 * 그대로 두면 혼자 매칭 풀을 돌아다니면서
+                 * 다른 실제 사용자와 임의로 매칭될 수 있다.
+                 */
+                if (otherMatching.user.isDummy) {
+                    await tx.matching.update({
+                        where: { id: otherMatching.id},
+                        data: {
+                            status: MatchingStatus.CANCELLED,
+                            endedAt: new Date(),
+                        },
+                    });
+                } else {
+                    await this.penalty.releaseWithoutPenalty(tx, otherMatching.id);
+                    requeueMatchingId = otherMatching.id;
+                }
 
                 return {
                     attempt: updatedAttempt,
-                    requeueMatchingId: otherMatching.id,
+                    requeueMatchingId,
                     notifyPaymentPending: null,
                 };
             }
