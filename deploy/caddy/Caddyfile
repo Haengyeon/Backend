@@ -1,7 +1,7 @@
-# 백엔드 주소는 api.haengyeon.site. 두 주소 모두 A 레코드가 34.64.180.100이어야 인증서가 나온다.
-# 루트는 프론트로 넘어가는 동안만 같이 받는다. 루트 DNS가 옮겨지면 이 줄에서 뺀다.
+# 백엔드 주소는 api.haengyeon.site. A 레코드가 34.64.180.100이어야 인증서가 나온다.
+# 루트(haengyeon.site)는 프론트(Vercel) 몫이라 여기서 받지 않는다.
 
-api.haengyeon.site, haengyeon.site {
+api.haengyeon.site {
 	encode gzip
 
 	# 배포로 컨테이너가 교체되는 몇 초 동안 502를 내지 않고 기다렸다 다시 붙는다
