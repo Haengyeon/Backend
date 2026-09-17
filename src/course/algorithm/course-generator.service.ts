@@ -7,7 +7,7 @@
 //  4. Course / CourseSpot / CourseMission을 트랜잭션으로 저장
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CourseTheme, Hobby } from '../../generated/prisma/enums';
+import { CourseTheme, Hobby, Region } from '../../generated/prisma/enums';
 import { intersectHobbies, selectTheme } from './theme-selection';
 import { isUniqueViolation } from '../../common/prisma-error.util';
 import { CoursePlanningError, buildCoursePlan } from './course-planner';
@@ -21,6 +21,16 @@ import {
 import { THEME_FILTER, toPoolQueries } from './tour-category';
 import { TourApiClient } from './tour-api.client';
 import { CoursePlan } from './types';
+
+/** 결제 전 판정 결과 */
+export interface CoursePreflight {
+  /** 어떤 테마로도 코스를 못 만들면 false. 결제로 넘기면 안 된다 */
+  ok: boolean;
+  /** 실제로 쓸 테마. 원래 테마가 안 되면 대체된 것이 들어온다 */
+  theme: CourseTheme;
+  /** 이동 시간이 하루 코스 예산 안에 드는지. false여도 결제는 막지 않는다 */
+  withinMoveBudget: boolean;
+}
 
 @Injectable()
 export class CourseGeneratorService {
@@ -59,25 +69,11 @@ export class CourseGeneratorService {
 
     const theme = this.decideTheme(attempt);
 
-    const template = templateFor(theme);
-    const queries = toPoolQueries([
-      ...template.map((slot) => slot.filter),
-      THEME_FILTER[theme],
-    ]);
-
-    // 매칭이 시군구 단위로 성사됐으므로 후보도 그 범위로 좁힌다
-    const pool = await this.tourApi.fetchPool(
+    const plan = await this.planCourse(
         attempt.region,
-        queries,
         attempt.sigunguCode,
-    );
-    this.logger.log(
-        `후보 풀 ${pool.length}건 (region=${attempt.region}/${attempt.sigunguCode}, theme=${theme}, 호출 ${queries.length}회)`,
-    );
-
-    const plan = buildCoursePlan(
-        { region: attempt.region, theme, seed: matchAttemptId },
-        pool,
+        theme,
+        matchAttemptId,
     );
 
     for (const spot of plan.spots) {
@@ -101,6 +97,87 @@ export class CourseGeneratorService {
       }
       throw error;
     }
+  }
+
+  /**
+   * 후보를 받아 코스 한 벌을 짠다. 저장은 하지 않는다.
+   *
+   * 실제 생성과 결제 전 판정이 같은 경로를 타야 한다. 판정에서 통과한 조합이
+   * 생성에서 실패하면 결제만 끝나고 코스가 없는 상태가 되기 때문이다.
+   */
+  private async planCourse(
+    region: Region,
+    sigunguCode: string | null,
+    theme: CourseTheme,
+    seed: string,
+  ): Promise<CoursePlan> {
+    const template = templateFor(theme);
+    const queries = toPoolQueries([
+      ...template.map((slot) => slot.filter),
+      THEME_FILTER[theme],
+    ]);
+
+    // 매칭이 시군구 단위로 성사됐으므로 후보도 그 범위로 좁힌다
+    const pool = await this.tourApi.fetchPool(region, queries, sigunguCode);
+
+    this.logger.log(
+      `후보 풀 ${pool.length}건 (region=${region}/${sigunguCode}, theme=${theme}, 호출 ${queries.length}회)`,
+    );
+
+    return buildCoursePlan({ region, theme, seed }, pool);
+  }
+
+  /**
+   * 결제로 넘기기 전에 코스를 만들 수 있는지 미리 본다.
+   *
+   * 코스는 양쪽 결제가 끝난 뒤에 만들어진다. 거기서 후보가 모자라면
+   * 돈은 냈는데 코스가 없는 상태가 된다. 실측으로 부산 북구(로컬맛집·액티비티),
+   * 서울 금천구(걷기여행)가 그렇게 실패한다.
+   *
+   * 테마를 바꾸면 되는 경우가 있어 후보 테마를 순서대로 시도한다. 첫 테마가
+   * 통과하면 거기서 멈춘다 — 응답을 붙잡고 TourAPI를 부르는 중이라 호출을 아껴야 한다.
+   *
+   * 이동 시간이 예산을 넘는 것은 막지 않는다. 코스가 나오기는 하므로 결제가 깨지지
+   * 않고, 넓은 군을 통째로 매칭 불가로 만드는 것은 기획이 정할 일이다.
+   * 대신 예산 안에 드는 테마가 있으면 그쪽을 고른다.
+   */
+  async preflight(
+    region: Region,
+    sigunguCode: string | null,
+    themes: CourseTheme[],
+  ): Promise<CoursePreflight> {
+    let fallback: CoursePreflight | null = null;
+
+    for (const theme of themes) {
+      let plan: CoursePlan;
+      try {
+        plan = await this.planCourse(region, sigunguCode, theme, 'preflight');
+      } catch (error) {
+        if (error instanceof CoursePlanningError) {
+          this.logger.warn(
+            `사전 판정 실패 (region=${region}/${sigunguCode}, theme=${theme}): ${error.code}`,
+          );
+          continue;
+        }
+        // TourAPI 장애 같은 일시적 오류로 매칭을 막지 않는다.
+        // 여기서 막으면 외부 서비스가 흔들릴 때 매칭이 통째로 멈춘다
+        this.logger.error('사전 판정 중 오류', error as Error);
+        return { ok: true, theme, withinMoveBudget: true };
+      }
+
+      const result: CoursePreflight = {
+        ok: true,
+        theme,
+        withinMoveBudget: plan.withinMoveBudget,
+      };
+
+      if (plan.withinMoveBudget) return result;
+
+      // 예산을 넘겼어도 코스는 나온다. 더 나은 테마가 없으면 이걸 쓴다
+      fallback ??= result;
+    }
+
+    return fallback ?? { ok: false, theme: themes[0], withinMoveBudget: false };
   }
 
   /**
