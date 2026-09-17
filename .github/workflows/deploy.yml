@@ -39,15 +39,16 @@ jobs:
 
       - name: 배포 검증
         run: |
-          # 밖에서 실제로 응답하는지 본다. 안 되면 배포를 실패로 끝낸다
-          for i in $(seq 1 12); do
+          # 루트 도메인은 프론트로 넘어가므로 api 주소를 이 서버 IP로 고정해서 본다
+          for i in $(seq 1 24); do
             code=$(curl -sS -o /dev/null -w '%{http_code}' \
-              https://haengyeon.site/api/v1/health --max-time 10 || echo 000)
+              --resolve "api.haengyeon.site:443:$VM_HOST" \
+              https://api.haengyeon.site/api/v1/health --max-time 10 || echo 000)
             if [ "$code" = "200" ]; then
               echo "health 200 - 배포 반영 확인"
               exit 0
             fi
-            echo "  ($i/12) code=$code"
+            echo "  ($i/24) code=$code"
             sleep 5
           done
           echo "health 엔드포인트가 응답하지 않습니다"
