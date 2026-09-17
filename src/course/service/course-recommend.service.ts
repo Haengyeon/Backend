@@ -32,6 +32,7 @@ import {
 } from '../algorithm/tour-category';
 import { TourApiClient } from '../algorithm/tour-api.client';
 import { SpotFilter, TourSpot } from '../algorithm/types';
+import { summarizeDescription } from '../course-text.util';
 import {
   RECOMMEND_DEFAULT_LIMIT,
   RECOMMEND_MAX_LIMIT,
@@ -44,6 +45,13 @@ import {
 /** 테마 조합당 캐시 유지 시간. 관광지 목록은 자주 바뀌지 않는다 */
 const CACHE_TTL_MS = 60 * 60 * 1000;
 
+/** 소개글 캐시 유지 시간. 원문은 거의 바뀌지 않는다 */
+const DESCRIPTION_TTL_MS = 24 * 60 * 60 * 1000;
+
+// 원래 소개글이 없는 곳과 호출이 실패한 곳을 구분할 수 없다.
+// 일시 장애로 하루 내내 소개글이 빠지지 않도록 짧게 둔다.
+const MISSING_DESCRIPTION_TTL_MS = 60 * 60 * 1000;
+
 /** 취미로 뽑을 테마 수. 너무 많으면 취향과 상관없는 곳까지 섞인다 */
 const THEMES_FROM_HOBBIES = 3;
 
@@ -55,12 +63,20 @@ interface CacheEntry {
   expiresAt: number;
 }
 
+interface DescriptionEntry {
+  text: string | null;
+  expiresAt: number;
+}
+
 @Injectable()
 export class CourseRecommendService {
   private readonly logger = new Logger(CourseRecommendService.name);
 
   // 홈 화면은 열 때마다 불린다. 캐시가 없으면 TourAPI 일일 한도가 금방 녹는다.
   private readonly cache = new Map<string, CacheEntry>();
+
+  // 소개글은 장소마다 따로 불러야 해서 장소 단위로 캐시한다
+  private readonly descriptions = new Map<string, DescriptionEntry>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -86,9 +102,12 @@ export class CourseRecommendService {
 
     const page = items.slice(offset, offset + take);
     const hasMore = offset + take < items.length;
+    const descriptions = await this.descriptionsOf(page);
 
     return {
-      items: page.map((spot) => this.toDto(spot)),
+      items: page.map((spot) =>
+        this.toDto(spot, descriptions.get(spot.contentId) ?? null),
+      ),
       nextCursor: hasMore ? encodeOffsetCursor(offset + take) : null,
       hasMore,
     };
@@ -169,13 +188,52 @@ export class CourseRecommendService {
     return spots;
   }
 
-  private toDto(spot: TourSpot): RecommendedSpotDto {
+  /**
+   * 이번 페이지에 나갈 장소의 소개글.
+   *
+   * 목록 조회에는 소개글이 없어서 장소마다 한 번 더 부른다.
+   * 후보 전체를 부르면 TourAPI 한도가 녹으므로 화면에 나갈 장소만 부른다.
+   */
+  private async descriptionsOf(
+    spots: TourSpot[],
+  ): Promise<Map<string, string | null>> {
+    const now = Date.now();
+    const stale = spots
+      .map((spot) => spot.contentId)
+      .filter((id) => (this.descriptions.get(id)?.expiresAt ?? 0) <= now);
+
+    if (stale.length > 0) {
+      const overviews = await this.tourApi.fetchOverviews(stale);
+
+      for (const id of stale) {
+        const text = summarizeDescription(overviews.get(id) ?? null);
+        this.descriptions.set(id, {
+          text,
+          expiresAt:
+            now + (text ? DESCRIPTION_TTL_MS : MISSING_DESCRIPTION_TTL_MS),
+        });
+      }
+    }
+
+    return new Map(
+      spots.map((spot) => [
+        spot.contentId,
+        this.descriptions.get(spot.contentId)?.text ?? null,
+      ]),
+    );
+  }
+
+  private toDto(
+    spot: TourSpot,
+    description: string | null,
+  ): RecommendedSpotDto {
     return {
       contentId: spot.contentId,
       name: spot.title,
       // 전국 조회는 areaCode가 비어 오므로 주소에서 되짚는다
       region: regionFromAddress(spot.address),
       category: categoryLabelOf(spot.lclsSystm1, spot.lclsSystm2),
+      description,
       address: spot.address,
       latitude: spot.latitude,
       longitude: spot.longitude,
