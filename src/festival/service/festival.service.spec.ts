@@ -273,7 +273,9 @@ describe('listOngoing - 취미 순서', () => {
 });
 
 describe('listOngoing - 캐시', () => {
-  it('같은 날에는 한 시간 동안 TourAPI를 다시 부르지 않는다', async () => {
+  it('같은 날에는 하루 종일 TourAPI를 다시 부르지 않는다', async () => {
+    // 날짜가 함께 캐시돼 있어 자정을 넘기면 어차피 새로 받는다. 그 전에 다시 부르는 건
+    // 낭비다 — 개발계정 한도가 엔드포인트별 1,000건이라 하루 24번도 아깝다
     const { service, fetchOngoingFestivals } = buildService([
       festival({ contentId: '1' }),
     ]);
@@ -283,9 +285,10 @@ describe('listOngoing - 캐시', () => {
     await service.listOngoing(USER_ID, {});
     expect(fetchOngoingFestivals).toHaveBeenCalledTimes(1);
 
+    // 한 시간이던 때는 여기서 다시 불렀다
     jest.advanceTimersByTime(2 * MINUTE);
     await service.listOngoing(USER_ID, {});
-    expect(fetchOngoingFestivals).toHaveBeenCalledTimes(2);
+    expect(fetchOngoingFestivals).toHaveBeenCalledTimes(1);
   });
 
   it('자정이 지나면 한 시간이 안 됐어도 새 날짜로 다시 부른다', async () => {

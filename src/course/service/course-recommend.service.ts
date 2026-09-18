@@ -33,6 +33,7 @@ import {
 import { TourApiClient } from '../algorithm/tour-api.client';
 import { SpotFilter, TourSpot } from '../algorithm/types';
 import { summarizeDescription } from '../course-text.util';
+import { SpotDescriptionService } from './spot-description.service';
 import {
   RECOMMEND_DEFAULT_LIMIT,
   RECOMMEND_MAX_LIMIT,
@@ -42,15 +43,18 @@ import {
   RecommendedSpotDto,
 } from '../dto/response/recommended-response.dto';
 
-/** 테마 조합당 캐시 유지 시간. 관광지 목록은 자주 바뀌지 않는다 */
-const CACHE_TTL_MS = 60 * 60 * 1000;
-
-/** 소개글 캐시 유지 시간. 원문은 거의 바뀌지 않는다 */
-const DESCRIPTION_TTL_MS = 24 * 60 * 60 * 1000;
-
-// 원래 소개글이 없는 곳과 호출이 실패한 곳을 구분할 수 없다.
-// 일시 장애로 하루 내내 소개글이 빠지지 않도록 짧게 둔다.
-const MISSING_DESCRIPTION_TTL_MS = 60 * 60 * 1000;
+/**
+ * 테마 조합당 캐시 유지 시간.
+ *
+ * 1시간이던 때는 같은 조합을 하루에 24번까지 다시 받았다. 근거가 있어서 그랬던 게
+ * 아니라 처음에 보수적으로 잡은 값이었다. 관광지 목록은 그렇게 자주 바뀌지 않는다 —
+ * areaBasedSyncList2로 확인해 보면 변경분이 보름에 수십 건 수준이다.
+ *
+ * 하루로 늘리면 호출이 사용자 수와 무관해진다. 테마 3개 조합이 최대 56가지이므로,
+ * 사람이 몇 명이 오든 조합당 하루 한 번씩 = 하루 56회가 상한이 된다.
+ * 개발계정 한도가 엔드포인트별 1,000건이라 이 상한이 있는 게 중요하다.
+ */
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** 취미로 뽑을 테마 수. 너무 많으면 취향과 상관없는 곳까지 섞인다 */
 const THEMES_FROM_HOBBIES = 3;
@@ -63,11 +67,6 @@ interface CacheEntry {
   expiresAt: number;
 }
 
-interface DescriptionEntry {
-  text: string | null;
-  expiresAt: number;
-}
-
 @Injectable()
 export class CourseRecommendService {
   private readonly logger = new Logger(CourseRecommendService.name);
@@ -75,12 +74,10 @@ export class CourseRecommendService {
   // 홈 화면은 열 때마다 불린다. 캐시가 없으면 TourAPI 일일 한도가 금방 녹는다.
   private readonly cache = new Map<string, CacheEntry>();
 
-  // 소개글은 장소마다 따로 불러야 해서 장소 단위로 캐시한다
-  private readonly descriptions = new Map<string, DescriptionEntry>();
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly tourApi: TourApiClient,
+    private readonly spotDescriptions: SpotDescriptionService,
   ) {}
 
   async recommend(
@@ -161,6 +158,30 @@ export class CourseRecommendService {
     );
   }
 
+  /**
+   * 추천에 나올 만한 장소의 소개글을 미리 받아 둔다. 스케줄러가 새벽에 부른다.
+   *
+   * 낮에 사용자가 홈을 열 때 detailCommon2를 부르지 않게 하는 게 목적이다.
+   * 같은 호출이라도 새벽에 정해진 양만 쓰면 한도를 예측할 수 있다.
+   *
+   * 테마를 전부 넣어 가장 넓은 풀을 받는다. 어떤 사용자의 조합이든 이 풀의
+   * 부분집합이라, 여기만 채워 두면 대부분 DB에서 해결된다.
+   *
+   * 아직 안 받은 것만 골라 예산만큼 처리해서, 날마다 다음 장소로 넘어간다.
+   */
+  async warmDescriptions(budget: number): Promise<number> {
+    const pool = await this.loadPool(Object.values(CourseTheme));
+
+    const pending = await this.spotDescriptions.unknownAmong(
+      pool.map((spot) => spot.contentId),
+      budget,
+    );
+    if (pending.length === 0) return 0;
+
+    await this.spotDescriptions.overviewsOf(pending);
+    return pending.length;
+  }
+
   private async loadPool(themes: CourseTheme[]): Promise<TourSpot[]> {
     const key = [...themes].sort().join(',');
     const cached = this.cache.get(key);
@@ -191,34 +212,24 @@ export class CourseRecommendService {
   /**
    * 이번 페이지에 나갈 장소의 소개글.
    *
-   * 목록 조회에는 소개글이 없어서 장소마다 한 번 더 부른다.
-   * 후보 전체를 부르면 TourAPI 한도가 녹으므로 화면에 나갈 장소만 부른다.
+   * 목록 조회에는 소개글이 없어서 장소마다 한 번 더 불러야 한다.
+   * 후보 전체를 부르면 TourAPI 한도가 녹으므로 화면에 나갈 장소만 맡긴다.
+   *
+   * 실제 호출 여부는 SpotDescriptionService가 정한다 — DB에 있으면 안 부른다.
+   * 요약은 여기서 한다. DB에는 원문이 들어 있어서 요약 규칙이 바뀌어도
+   * TourAPI를 다시 부를 일이 없다.
    */
   private async descriptionsOf(
     spots: TourSpot[],
   ): Promise<Map<string, string | null>> {
-    const now = Date.now();
-    const stale = spots
-      .map((spot) => spot.contentId)
-      .filter((id) => (this.descriptions.get(id)?.expiresAt ?? 0) <= now);
-
-    if (stale.length > 0) {
-      const overviews = await this.tourApi.fetchOverviews(stale);
-
-      for (const id of stale) {
-        const text = summarizeDescription(overviews.get(id) ?? null);
-        this.descriptions.set(id, {
-          text,
-          expiresAt:
-            now + (text ? DESCRIPTION_TTL_MS : MISSING_DESCRIPTION_TTL_MS),
-        });
-      }
-    }
+    const overviews = await this.spotDescriptions.overviewsOf(
+      spots.map((spot) => spot.contentId),
+    );
 
     return new Map(
       spots.map((spot) => [
         spot.contentId,
-        this.descriptions.get(spot.contentId)?.text ?? null,
+        summarizeDescription(overviews.get(spot.contentId) ?? null),
       ]),
     );
   }

@@ -29,6 +29,17 @@ describe('summarizeDescription', () => {
     expect(result.endsWith('.')).toBe(true);
   });
 
+  it('100자를 조금 넘는 첫 문장도 말줄임표 없이 통째로 싣는다', () => {
+    // 관광공사 원문에 흔한 길이다. 한계가 100자였을 때 이런 문장이 몇 자 차이로
+    // 잘려 "…가구 전문 거리로, 30여…"처럼 말이 끊겼다
+    const text =
+      '광명가구문화의거리는 광명사거리역에서 개봉교에 이르는 도심 속 가구 전문 거리로, 30여 개의 유명 브랜드 매장과 개성 있는 중소기업 전시장이 한 곳에 모여 형성된 가구 문화 중심지이다. 전국 어디든 가능한 배송 시스템은 이곳의 장점이다.';
+    const result = summarizeDescription(text)!;
+
+    expect(result.endsWith('…')).toBe(false);
+    expect(result.endsWith('가구 문화 중심지이다.')).toBe(true);
+  });
+
   it('한 문장이 한계마저 넘으면 그때는 잘라내고 말줄임표를 붙인다', () => {
     const result = summarizeDescription('가'.repeat(200) + '.')!;
 
