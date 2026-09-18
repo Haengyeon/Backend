@@ -49,7 +49,12 @@ export function buildCoursePlan(
   params: CourseBuildParams,
   pool: TourSpot[],
 ): CoursePlan {
-  const course = selectCourse(pool, params.theme, params.seed);
+  const course = selectCourse(
+    pool,
+    params.theme,
+    params.seed,
+    params.travelDate,
+  );
 
   if (!course || course.spots.length < SPOT_COUNT) {
     throw new CoursePlanningError(
@@ -77,6 +82,7 @@ export function buildCoursePlan(
         distanceKm === null ? null : estimateMoveMinutes(distanceKm),
       distanceKmFromPrevious: distanceKm,
       relaxation: item.relaxation,
+      congestion: item.congestion,
     };
   });
 

@@ -10,7 +10,14 @@
 //      1~5km에 없으면 7, 10km로 넓히고 왜 넓혔는지 남긴다(relaxation).
 //   3. 조합 — 후보를 조합해 경로를 다 만들고 이동거리가 짧은 것을 고른다.
 //   4. 같은 조건이어도 커플마다 다른 코스가 나오도록 matchAttemptId로 하나 고른다.
+//
+// 여행일을 주면 1~4 전부에서 방문 시점에 붐빌 곳을 뒤로 민다(congestion.ts).
 import { CourseTheme } from '../../generated/prisma/enums';
+import {
+  CongestionOf,
+  NO_CONGESTION,
+  createCongestionEstimator,
+} from './congestion';
 import { templateFor } from './course-template';
 import { sanitizePool } from './first-date-policy';
 import { haversineKm } from './geo';
@@ -91,6 +98,22 @@ export const ACCEPTABLE_BACKTRACK_RATIO = 0.2;
 export const ACCEPTABLE_BACKTRACK_FLOOR_KM = 0.5;
 
 /**
+ * 후보 순서에서 혼잡도의 무게. 시드 점수에 (1 - 이 값 × 혼잡도)를 곱한다.
+ * 붐비는 곳을 빼지 않고 뒤로 밀릴 확률만 올린다. 한산한 순으로 줄 세우면
+ * 한산한 분류가 후보 자리를 독차지해 커플마다 다른 코스가 안 나온다.
+ */
+export const CONGESTION_RANK_WEIGHT = 0.3;
+
+/**
+ * 추첨에 넣을 코스 비율. 동선 기준을 통과한 코스를 한산한 순으로 세워 앞에서 이만큼만 남긴다.
+ * 값이 아니라 순서로 자르므로 혼잡도 테이블 숫자를 바꿔도 몇 개가 빠지는지는 그대로다.
+ */
+export const CALM_COURSE_SHARE = 0.5;
+
+/** 그래도 이만큼은 남긴다. 후보가 적은 군에서 코스가 하나로 굳지 않게 */
+export const MIN_CALM_COURSES = 3;
+
+/**
  * 이 지역에서 쓸 탐색 설정. 풀을 한 번 훑어 정하고 선정 내내 쓴다.
  */
 export interface SearchScale {
@@ -164,6 +187,8 @@ export interface SelectedSpot {
   spot: TourSpot;
   /** 조건을 완화해서 뽑았으면 사유, 아니면 null */
   relaxation: string | null;
+  /** 방문 시점 혼잡 추정(0~1). 여행일을 모르면 null */
+  congestion: number | null;
 }
 
 export interface SelectedCourse {
@@ -180,8 +205,10 @@ export interface SelectedCourse {
   withinMoveBudget: boolean;
   /** 역주행 + 재방문 페널티 합(km 환산). 0이면 되돌아감 없는 동선. */
   backtrackPenaltyKm: number;
-  /** 최소화 대상 점수 (이동거리 + 가중 페널티). 코스 간 비교용. */
+  /** 최소화 대상 점수 (이동거리 + 가중 페널티, 혼잡도 비율). 코스 간 비교용. */
   score: number;
+  /** 4곳 평균 혼잡도(0~1). 여행일을 모르면 0 */
+  congestion: number;
 }
 
 /** 시드 기반 해시. matchAttemptId를 넘기면 커플마다 다르면서 재현 가능한 순서가 된다. */
@@ -207,24 +234,32 @@ function prefersTitle(spot: TourSpot, spec?: SlotSpec): number {
     : 1;
 }
 
+/** congestion은 이 슬롯 시간대로 묶인 혼잡도. 안 주면 혼잡도 없이 정렬한다 */
 function rank(
   candidates: TourSpot[],
   seed: string,
   spec?: SlotSpec,
+  congestion: (spot: TourSpot) => number = () => 0,
 ): TourSpot[] {
-  return [...candidates].sort((a, b) => {
-    const preferred = prefersTitle(a, spec) - prefersTitle(b, spec);
-    if (preferred !== 0) return preferred;
+  // 정렬 키를 한 번씩만 만든다. 비교할 때마다 만들면 해시를 n log n번 돌린다
+  const keyed = candidates.map((spot) => ({
+    spot,
+    preferred: prefersTitle(spot, spec),
+    image: spot.firstImage ? 0 : 1,
+    score:
+      seededScore(seed, spot.contentId) *
+      (1 - CONGESTION_RANK_WEIGHT * congestion(spot)),
+  }));
 
-    const image = Number(Boolean(b.firstImage)) - Number(Boolean(a.firstImage));
-    if (image !== 0) return image;
+  keyed.sort(
+    (a, b) =>
+      a.preferred - b.preferred ||
+      a.image - b.image ||
+      b.score - a.score ||
+      a.spot.contentId.localeCompare(b.spot.contentId),
+  );
 
-    const score =
-      seededScore(seed, b.contentId) - seededScore(seed, a.contentId);
-    if (score !== 0) return score;
-
-    return a.contentId.localeCompare(b.contentId);
-  });
+  return keyed.map((item) => item.spot);
 }
 
 function byDistance(candidates: TourSpot[], origin: TourSpot): TourSpot[] {
@@ -240,6 +275,8 @@ type CandidateSource = 'ROLE' | 'THEME' | 'ANY';
 interface SlotCandidates {
   spec: SlotSpec;
   list: TourSpot[];
+  /** list와 같은 순서의 혼잡도. 조합마다 다시 재지 않게 미리 잰다 */
+  congestion: number[];
   source: CandidateSource;
 }
 
@@ -283,41 +320,29 @@ function collectSlotCandidates(
   theme: CourseTheme,
   seed: string,
   scale: SearchScale,
+  congestionOf: CongestionOf,
 ): SlotCandidates | null {
+  const levelOf = (spot: TourSpot) => congestionOf(spot, spec.timeBand);
+  const candidates = (matched: TourSpot[], source: CandidateSource) => {
+    const list = buildList(matched, anchor, seed, spec, scale, levelOf);
+    return { spec, list, congestion: list.map(levelOf), source };
+  };
+
   const matching = pool.filter(
     (spot) =>
       spot.contentId !== anchor.contentId && matchesFilter(spot, spec.filter),
   );
-
-  if (matching.length > 0) {
-    return {
-      spec,
-      list: buildList(matching, anchor, seed, spec, scale),
-      source: 'ROLE',
-    };
-  }
+  if (matching.length > 0) return candidates(matching, 'ROLE');
 
   const byTheme = pool.filter(
     (spot) =>
       spot.contentId !== anchor.contentId &&
       matchesFilter(spot, THEME_FILTER[theme]),
   );
-  if (byTheme.length > 0) {
-    return {
-      spec,
-      list: buildList(byTheme, anchor, seed, spec, scale),
-      source: 'THEME',
-    };
-  }
+  if (byTheme.length > 0) return candidates(byTheme, 'THEME');
 
   const anySpot = pool.filter((spot) => spot.contentId !== anchor.contentId);
-  if (anySpot.length > 0) {
-    return {
-      spec,
-      list: buildList(anySpot, anchor, seed, spec, scale),
-      source: 'ANY',
-    };
-  }
+  if (anySpot.length > 0) return candidates(anySpot, 'ANY');
 
   return null;
 }
@@ -332,13 +357,17 @@ function buildList(
   seed: string,
   spec: SlotSpec,
   scale: SearchScale,
+  congestion: (spot: TourSpot) => number,
 ): TourSpot[] {
   for (const radiusKm of [...scale.stepsKm, ...scale.relaxStepsKm]) {
     const near = matching.filter(
       (spot) => haversineKm(anchor, spot) <= radiusKm,
     );
     if (near.length >= scale.candidatesPerSlot) {
-      return rank(near, seed, spec).slice(0, scale.candidatesPerSlot);
+      return rank(near, seed, spec, congestion).slice(
+        0,
+        scale.candidatesPerSlot,
+      );
     }
   }
 
@@ -347,6 +376,7 @@ function buildList(
     matching.filter((spot) => haversineKm(anchor, spot) <= maxNormal),
     seed,
     spec,
+    congestion,
   );
   const outside = byDistance(
     matching.filter((spot) => haversineKm(anchor, spot) > maxNormal),
@@ -396,25 +426,32 @@ function looksLikeIsland(spot: TourSpot): boolean {
  */
 function bestCombination(
   anchor: TourSpot,
+  anchorCongestion: number,
   slots: SlotCandidates[],
   requireDistinct: boolean,
   limitIslands: boolean,
 ): ScoredCombination | null {
   let best: ScoredCombination | null = null;
 
-  const walk = (index: number, chosen: TourSpot[], usedIds: Set<string>) => {
+  const walk = (
+    index: number,
+    chosen: TourSpot[],
+    levels: number[],
+    usedIds: Set<string>,
+  ) => {
     if (index === slots.length) {
       const spots = [anchor, ...chosen];
-      const path = scorePath(spots);
+      const path = scorePath(spots, levels);
       if (!best || path.score < best.path.score - 1e-9) {
         best = { spots, path };
       }
       return;
     }
 
-    const { spec, list } = slots[index];
+    const { spec, list, congestion } = slots[index];
 
-    for (const candidate of list) {
+    for (let i = 0; i < list.length; i++) {
+      const candidate = list[i];
       if (usedIds.has(candidate.contentId)) continue;
 
       // 섬끼리 묶이면 사이를 배로 건너야 한다
@@ -437,12 +474,17 @@ function bestCombination(
       }
 
       usedIds.add(candidate.contentId);
-      walk(index + 1, [...chosen, candidate], usedIds);
+      walk(
+        index + 1,
+        [...chosen, candidate],
+        [...levels, congestion[i]],
+        usedIds,
+      );
       usedIds.delete(candidate.contentId);
     }
   };
 
-  walk(0, [], new Set([anchor.contentId]));
+  walk(0, [], [anchorCongestion], new Set([anchor.contentId]));
   return best;
 }
 
@@ -484,6 +526,26 @@ function clustered(
 }
 
 /**
+ * 동선 기준을 통과한 코스 중 덜 붐비는 쪽만 남긴다. 순서는 그대로 둔다.
+ * 동점은 같이 남기므로 여행일이 없으면(전부 0) 아무것도 안 빠진다.
+ */
+export function calmerCourses<T extends { congestion: number }>(
+  courses: T[],
+): T[] {
+  if (courses.length === 0) return courses;
+
+  const keep = Math.min(
+    courses.length,
+    Math.max(MIN_CALM_COURSES, Math.ceil(courses.length * CALM_COURSE_SHARE)),
+  );
+  const cutoff = courses
+    .map((course) => course.congestion)
+    .sort((a, b) => a - b)[keep - 1];
+
+  return courses.filter((course) => course.congestion <= cutoff);
+}
+
+/**
  * 후보군 조합 기반 전체 경로 최적화.
  *
  * 앵커(1번 슬롯) 후보마다 나머지 슬롯의 후보군을 뽑고, 조합을 전부 만들어
@@ -496,6 +558,7 @@ export function selectCourse(
   rawPool: TourSpot[],
   theme: CourseTheme,
   seed: string,
+  travelDate?: Date,
 ): SelectedCourse | null {
   // 완화 체인 어느 단계에서도 나오면 안 되므로 풀 자체에서 걷어낸다
   const pool = sanitizePool(rawPool);
@@ -503,6 +566,13 @@ export function selectCourse(
 
   // 반경은 이 지역 후보가 얼마나 뭉쳐 있는지 보고 정한다. 한 번만 재서 끝까지 쓴다
   const scale = searchScaleOf(pool);
+
+  // 혼잡도도 한 번만 준비한다. "주변"의 범위는 이 지역의 뭉친 정도(unitKm)를 따른다
+  const congestionOf = travelDate
+    ? createCongestionEstimator(pool, travelDate, scale.unitKm)
+    : NO_CONGESTION;
+  const anchorLevel = (spot: TourSpot) =>
+    congestionOf(spot, template[0].timeBand);
 
   let anchors = rank(
     clustered(
@@ -512,6 +582,7 @@ export function selectCourse(
     ),
     seed,
     template[0],
+    anchorLevel,
   ).slice(0, ANCHOR_TRIES);
 
   let anchorRelaxation: string | null = null;
@@ -524,13 +595,20 @@ export function selectCourse(
         scale,
       ),
       seed,
+      undefined,
+      anchorLevel,
     ).slice(0, ANCHOR_TRIES);
     anchorRelaxation = '1번 역할 후보 없음 -> 테마 기준 앵커';
   }
 
   // 테마에 맞는 곳이 지역에 하나도 없어도 빈 코스를 낼 수는 없다
   if (anchors.length === 0) {
-    anchors = rank(clustered(pool, pool, scale), seed).slice(0, ANCHOR_TRIES);
+    anchors = rank(
+      clustered(pool, pool, scale),
+      seed,
+      undefined,
+      anchorLevel,
+    ).slice(0, ANCHOR_TRIES);
     anchorRelaxation = '테마 후보 없음 -> 지역 전체에서 앵커 선정';
   }
 
@@ -547,6 +625,7 @@ export function selectCourse(
           theme,
           seed,
           scale,
+          congestionOf,
         );
         if (!candidates) break;
         slots.push(candidates);
@@ -554,9 +633,10 @@ export function selectCourse(
       if (slots.length < template.length - 1) continue;
 
       // 중분류 중복 회피를 먼저 시도하고, 그걸로 만들 수 있는 경로가 없으면 푼다
+      const anchorCongestion = anchorLevel(anchor);
       const combination =
-        bestCombination(anchor, slots, true, limitIslands) ??
-        bestCombination(anchor, slots, false, limitIslands);
+        bestCombination(anchor, anchorCongestion, slots, true, limitIslands) ??
+        bestCombination(anchor, anchorCongestion, slots, false, limitIslands);
       if (!combination) continue;
 
       built.push({
@@ -572,6 +652,9 @@ export function selectCourse(
                   slots[index - 1].source,
                   scale,
                 ),
+          congestion: travelDate
+            ? congestionOf(spot, template[index].timeBand)
+            : null,
         })),
         totalDistanceKm: combination.path.totalDistanceKm,
         moveMinutes: combination.path.moveMinutes,
@@ -579,6 +662,7 @@ export function selectCourse(
         backtrackPenaltyKm:
           combination.path.reversalKm + combination.path.revisitKm,
         score: combination.path.score,
+        congestion: combination.path.congestion,
       });
     }
 
@@ -618,8 +702,9 @@ export function selectCourse(
     return [...courses].sort((a, b) => a.score - b.score)[0];
   }
 
+  const calm = calmerCourses(acceptable);
   const index = Math.floor(
-    seededScore(seed, `pick:${acceptable.length}`) * acceptable.length,
+    seededScore(seed, `pick:${calm.length}`) * calm.length,
   );
-  return acceptable[Math.min(index, acceptable.length - 1)];
+  return calm[Math.min(index, calm.length - 1)];
 }
