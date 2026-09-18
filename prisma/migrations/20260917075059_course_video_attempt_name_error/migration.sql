@@ -5,5 +5,6 @@
 
 */
 -- AlterTable
-ALTER TABLE "CourseVideo" DROP COLUMN "attemptcount",
-ADD COLUMN     "attemptCount" INTEGER NOT NULL DEFAULT 0;
+-- 운영엔 attemptCount가 이미 있다(20260917175000). 새 DB에선 원래대로 동작
+ALTER TABLE "CourseVideo" DROP COLUMN IF EXISTS "attemptcount",
+ADD COLUMN IF NOT EXISTS "attemptCount" INTEGER NOT NULL DEFAULT 0;
