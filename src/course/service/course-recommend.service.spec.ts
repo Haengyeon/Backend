@@ -1,15 +1,16 @@
 // 홈 추천 관광지의 소개글.
 //
 // 목록 조회에는 소개글이 없어서 장소마다 TourAPI를 한 번 더 부른다.
-// 홈은 자주 열리므로 화면에 나갈 장소만, 캐시에 없을 때만 부르는지 본다.
+// 홈은 자주 열리므로 화면에 나갈 장소만 부르는지, 받은 원문을 어떻게 줄이는지 본다.
+// 같은 장소를 다시 부르지 않는 것은 SpotDescriptionService가 맡는다.
 import { Logger } from '@nestjs/common';
 import { CourseRecommendService } from './course-recommend.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TourApiClient } from '../algorithm/tour-api.client';
+import { SpotDescriptionService } from './spot-description.service';
 import { TourSpot } from '../algorithm/types';
 
 const USER_ID = 'user-1';
-const HOUR_MS = 60 * 60 * 1000;
 
 function spot(contentId: string): TourSpot {
   return {
@@ -33,7 +34,14 @@ function buildService(overviews: Map<string, string>) {
   const prisma = {
     profile: { findUnique: jest.fn().mockResolvedValue({ hobbies: [] }) },
     courseSpot: { findMany: jest.fn().mockResolvedValue([]) },
-  };
+    // 소개글은 DB에 쌓인다. 여기서는 늘 비어 있다고 보고 TourAPI를 타게 둔다 —
+    // 무엇을 부르는지가 이 파일의 관심사다. 재호출 여부는 SpotDescriptionService 몫
+    spotDescription: {
+      findMany: jest.fn().mockResolvedValue([]),
+      upsert: jest.fn(),
+    },
+    $transaction: jest.fn().mockResolvedValue([]),
+  } as unknown as PrismaService;
 
   const fetchOverviews = jest.fn().mockResolvedValue(overviews);
   const tourApi = {
@@ -43,8 +51,9 @@ function buildService(overviews: Map<string, string>) {
 
   return {
     service: new CourseRecommendService(
-      prisma as unknown as PrismaService,
+      prisma,
       tourApi,
+      new SpotDescriptionService(prisma, tourApi),
     ),
     fetchOverviews,
   };
@@ -82,24 +91,5 @@ describe('CourseRecommendService — 추천 관광지 소개글', () => {
     await service.recommend(USER_ID, { limit: 1 });
 
     expect(fetchOverviews).toHaveBeenCalledWith(['1001']);
-  });
-
-  it('받아 둔 소개글은 다시 부르지 않고, 못 받은 곳만 1시간 뒤 다시 부른다', async () => {
-    const { service, fetchOverviews } = buildService(
-      new Map([['1001', '흥화문은 경희궁의 정문이다.']]),
-    );
-    const now = Date.now();
-    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
-
-    await service.recommend(USER_ID, {});
-    await service.recommend(USER_ID, {});
-    expect(fetchOverviews).toHaveBeenCalledTimes(1);
-
-    // 원래 소개글이 없는 곳인지 일시 장애였는지 몰라서 짧게만 기억한다
-    clock.mockReturnValue(now + HOUR_MS);
-    await service.recommend(USER_ID, {});
-
-    expect(fetchOverviews).toHaveBeenCalledTimes(2);
-    expect(fetchOverviews).toHaveBeenLastCalledWith(['1002']);
   });
 });

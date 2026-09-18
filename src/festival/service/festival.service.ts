@@ -22,8 +22,14 @@ import {
   FestivalListResponseDto,
 } from '../dto/response/festival-response.dto';
 
-/** 행사 목록은 하루 중에는 거의 안 바뀐다 */
-const CACHE_TTL_MS = 60 * 60 * 1000;
+/**
+ * 행사 목록은 하루 중에는 거의 안 바뀐다.
+ *
+ * 캐시에 날짜가 함께 들어 있어 자정을 넘기면 어차피 새로 받는다. 그래서 TTL은
+ * 하루를 덮을 만큼 길어도 된다. 1시간이던 때는 하루에 24번씩 같은 목록을 받았는데,
+ * 개발계정 한도가 엔드포인트별 1,000건이라 그럴 여유가 없다.
+ */
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** 실패 후 다시 부르기까지. 바로 다시 부르면 TourAPI 장애 동안 홈이 매번 타임아웃까지 멈춘다 */
 const RETRY_AFTER_MS = 60 * 1000;
@@ -80,6 +86,17 @@ export class FestivalService {
     });
 
     return profile?.hobbies ?? [];
+  }
+
+  /**
+   * 오늘 목록을 미리 받아 캐시에 올려 둔다. 스케줄러가 자정 직후에 부른다.
+   *
+   * 첫 사용자가 TourAPI 응답을 기다리지 않게 되고, 호출 수도 트래픽과 무관하게
+   * 하루 한 번으로 고정된다.
+   */
+  async refresh(): Promise<number> {
+    const festivals = await this.loadOngoing(kstToday());
+    return festivals.length;
   }
 
   private async loadOngoing(today: string): Promise<TourFestival[]> {
