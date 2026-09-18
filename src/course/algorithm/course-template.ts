@@ -175,76 +175,100 @@ export const COURSE_TEMPLATE: Record<CourseTheme, SlotSpec[]> = {
   //
   // PHOTO_SPOT과 LOCAL_FOOD_MARKET은 원래 이 모양이었다. 나머지를 여기 맞췄다.
   [CourseTheme.NATURE_HEALING]: [
-    { role: '자연·공원', filter: NATURE_WALK },
-    { role: '점심', filter: MEAL, stayMinutes: 60 },
-    { role: '카페', filter: CAFE, stayMinutes: 50 },
+    { role: '자연·공원', filter: NATURE_WALK, timeBand: 'MORNING' },
+    { role: '점심', filter: MEAL, stayMinutes: 60, timeBand: 'LUNCH' },
+    { role: '카페', filter: CAFE, stayMinutes: 50, timeBand: 'AFTERNOON' },
     {
       role: '노을·자연',
       filter: NATURE_WALK,
       distinctFromOrder: 1,
       preferTitleKeywords: SUNSET_KEYWORDS,
+      timeBand: 'EVENING',
     },
   ],
 
   [CourseTheme.WALKING_TRIP]: [
-    { role: '걷기·공원', filter: NATURE_WALK },
-    { role: '점심', filter: MEAL, stayMinutes: 60 },
-    { role: '카페', filter: CAFE, stayMinutes: 50 },
+    { role: '걷기·공원', filter: NATURE_WALK, timeBand: 'MORNING' },
+    { role: '점심', filter: MEAL, stayMinutes: 60, timeBand: 'LUNCH' },
+    { role: '카페', filter: CAFE, stayMinutes: 50, timeBand: 'AFTERNOON' },
     {
       role: '노을·산책',
       filter: NATURE_WALK,
       distinctFromOrder: 1,
       preferTitleKeywords: SUNSET_KEYWORDS,
+      timeBand: 'EVENING',
     },
   ],
 
   // 실내 전시는 폐관 전에 가도록 오전 고정, 야외는 뒤로.
   [CourseTheme.HISTORY_CULTURE]: [
-    { role: '실내 역사·전시', filter: INDOOR_HISTORY },
-    { role: '점심', filter: MEAL, stayMinutes: 60 },
-    { role: '카페', filter: CAFE, stayMinutes: 50 },
-    { role: '야외 고궁·역사공원', filter: OUTDOOR_HISTORY },
+    { role: '실내 역사·전시', filter: INDOOR_HISTORY, timeBand: 'MORNING' },
+    { role: '점심', filter: MEAL, stayMinutes: 60, timeBand: 'LUNCH' },
+    { role: '카페', filter: CAFE, stayMinutes: 50, timeBand: 'AFTERNOON' },
+    // 고궁은 17~18시에 닫아서 저녁이 아니라 오후로 본다
+    {
+      role: '야외 고궁·역사공원',
+      filter: OUTDOOR_HISTORY,
+      timeBand: 'AFTERNOON',
+    },
   ],
 
   [CourseTheme.ART_SENSIBILITY]: [
-    { role: '예술·전시', filter: ART },
-    { role: '점심', filter: MEAL, stayMinutes: 60 },
-    { role: '카페', filter: CAFE, stayMinutes: 50 },
-    { role: '공방·체험', filter: CRAFT_EXPERIENCE },
+    { role: '예술·전시', filter: ART, timeBand: 'MORNING' },
+    { role: '점심', filter: MEAL, stayMinutes: 60, timeBand: 'LUNCH' },
+    { role: '카페', filter: CAFE, stayMinutes: 50, timeBand: 'AFTERNOON' },
+    { role: '공방·체험', filter: CRAFT_EXPERIENCE, timeBand: 'AFTERNOON' },
   ],
 
   // 레저는 체력을 제일 많이 쓴다. 쉬는 구간이 더 필요하지 덜 필요하지 않다.
   [CourseTheme.ACTIVITY]: [
-    { role: '레저', filter: LEISURE },
-    { role: '점심', filter: MEAL, stayMinutes: 60 },
-    { role: '카페', filter: CAFE, stayMinutes: 50 },
-    { role: '레저', filter: LEISURE, distinctFromOrder: 1 },
+    { role: '레저', filter: LEISURE, timeBand: 'MORNING' },
+    { role: '점심', filter: MEAL, stayMinutes: 60, timeBand: 'LUNCH' },
+    { role: '카페', filter: CAFE, stayMinutes: 50, timeBand: 'AFTERNOON' },
+    {
+      role: '레저',
+      filter: LEISURE,
+      distinctFromOrder: 1,
+      timeBand: 'AFTERNOON',
+    },
   ],
 
   // 야경은 해 진 뒤여야 하므로 4번 고정. 그 앞이 저녁 자리가 된다.
   [CourseTheme.NIGHT_DATE]: [
-    { role: '산책·공원', filter: PARK_WALK },
-    { role: '카페', filter: CAFE, stayMinutes: 50 },
-    { role: '저녁', filter: MEAL, stayMinutes: 60 },
-    { role: '야경', filter: NIGHT_VIEW },
+    { role: '산책·공원', filter: PARK_WALK, timeBand: 'AFTERNOON' },
+    { role: '카페', filter: CAFE, stayMinutes: 50, timeBand: 'AFTERNOON' },
+    { role: '저녁', filter: MEAL, stayMinutes: 60, timeBand: 'EVENING' },
+    { role: '야경', filter: NIGHT_VIEW, timeBand: 'NIGHT' },
   ],
 
   [CourseTheme.PHOTO_SPOT]: [
-    { role: '사진명소', filter: PHOTO },
-    { role: '점심(외국식)', filter: FOREIGN_MEAL, stayMinutes: 60 },
-    { role: '카페', filter: CAFE, stayMinutes: 50 },
+    { role: '사진명소', filter: PHOTO, timeBand: 'MORNING' },
+    {
+      role: '점심(외국식)',
+      filter: FOREIGN_MEAL,
+      stayMinutes: 60,
+      timeBand: 'LUNCH',
+    },
+    { role: '카페', filter: CAFE, stayMinutes: 50, timeBand: 'AFTERNOON' },
     {
       role: '야경 사진명소',
       filter: PHOTO,
       preferTitleKeywords: SUNSET_KEYWORDS,
+      timeBand: 'EVENING',
     },
   ],
 
   [CourseTheme.LOCAL_FOOD_MARKET]: [
-    { role: '시장 구경', filter: MARKET },
-    { role: '점심 맛집', filter: MEAL, stayMinutes: 60 },
-    { role: '카페', filter: CAFE, stayMinutes: 50 },
-    { role: '저녁 맛집', filter: MEAL, distinctFromOrder: 2, stayMinutes: 60 },
+    { role: '시장 구경', filter: MARKET, timeBand: 'MORNING' },
+    { role: '점심 맛집', filter: MEAL, stayMinutes: 60, timeBand: 'LUNCH' },
+    { role: '카페', filter: CAFE, stayMinutes: 50, timeBand: 'AFTERNOON' },
+    {
+      role: '저녁 맛집',
+      filter: MEAL,
+      distinctFromOrder: 2,
+      stayMinutes: 60,
+      timeBand: 'EVENING',
+    },
   ],
 };
 

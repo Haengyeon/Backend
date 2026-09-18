@@ -10,6 +10,10 @@ import { TourSpot } from './types';
 export const REVERSAL_WEIGHT = 2.5;
 export const REVISIT_WEIGHT = 1.5;
 
+// 혼잡도는 km로 더하지 않고 점수에 비율로 건다. 고정 km는 2km 코스와 20km 코스에서 무게가 10배 달라진다.
+// 평균 혼잡도가 1이면 15% 불리하다 — 한산한 곳을 위해 최대 15%까지만 더 돈다
+export const CONGESTION_WEIGHT = 0.15;
+
 interface Point {
   x: number;
   y: number;
@@ -112,21 +116,34 @@ export interface PathScore {
   moveMinutes: number;
   reversalKm: number;
   revisitKm: number;
+  /** 스팟 평균 혼잡도(0~1). 안 넘기면 0 */
+  congestion: number;
 }
 
-export function scorePath(spots: TourSpot[]): PathScore {
+/** congestion은 spots와 같은 순서의 스팟별 혼잡도. 비우면 거리만 본다 */
+export function scorePath(
+  spots: TourSpot[],
+  congestion: number[] = [],
+): PathScore {
   const totalDistanceKm = routeLengthKm(spots);
   const reversalKm = reversalPenaltyKm(spots);
   const revisitKm = revisitPenaltyKm(spots);
 
+  let congestionSum = 0;
+  for (const level of congestion) congestionSum += level;
+  const meanCongestion =
+    congestion.length > 0 ? congestionSum / congestion.length : 0;
+
   return {
     score:
-      totalDistanceKm +
-      REVERSAL_WEIGHT * reversalKm +
-      REVISIT_WEIGHT * revisitKm,
+      (totalDistanceKm +
+        REVERSAL_WEIGHT * reversalKm +
+        REVISIT_WEIGHT * revisitKm) *
+      (1 + CONGESTION_WEIGHT * meanCongestion),
     totalDistanceKm,
     moveMinutes: routeMoveMinutes(spots),
     reversalKm,
     revisitKm,
+    congestion: meanCongestion,
   };
 }

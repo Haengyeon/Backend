@@ -53,6 +53,9 @@ export interface SpotFilter {
   keywordMode?: 'REQUIRE' | 'ALTERNATIVE';
 }
 
+/** 방문 시간대. 오전 06~11 · 점심 11~14 · 오후 14~17 · 저녁 17~21 · 밤 21~ */
+export type TimeBand = 'MORNING' | 'LUNCH' | 'AFTERNOON' | 'EVENING' | 'NIGHT';
+
 /** 테마 템플릿의 슬롯 1칸. 4칸의 역할은 전부 테마가 정한다. */
 export interface SlotSpec {
   /** 화면/로그용 역할 이름. 예: '자연', '점심(한식)', '야경' */
@@ -69,6 +72,11 @@ export interface SlotSpec {
    * 전시처럼 오래 머무는 곳과 카페를 같은 값으로 둘 수 없어서 슬롯이 정한다.
    */
   stayMinutes?: number;
+  /**
+   * 이 자리에 도착하는 시간대. 혼잡도 추정에 쓴다.
+   * 슬롯 번호로 짐작하면 야경 테마(산책 -> 카페 -> 저녁 -> 야경)가 틀려서 템플릿이 직접 적는다.
+   */
+  timeBand: TimeBand;
 }
 
 export interface PlannedSpot {
@@ -81,6 +89,8 @@ export interface PlannedSpot {
   distanceKmFromPrevious: number | null;
   /** 조건을 완화해서 뽑은 경우의 사유. null이면 정상 선정. */
   relaxation: string | null;
+  /** 방문 시점 혼잡 추정(0 한산 ~ 1 붐빔). 여행일을 모르면 null */
+  congestion: number | null;
 }
 
 export interface CoursePlan {
@@ -106,4 +116,6 @@ export interface CourseBuildParams {
   theme: CourseTheme;
   /** 커플마다 다른 코스가 나오게 하는 시드. 실제로는 matchAttemptId를 넘긴다. */
   seed: string;
+  /** 여행일. 주면 혼잡도를 반영하고, 없으면 혼잡도 없이 고른다 */
+  travelDate?: Date;
 }

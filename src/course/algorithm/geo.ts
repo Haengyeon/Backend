@@ -1,5 +1,5 @@
 // 스팟과 스팟 사이의 거리를 재주는 역활
-const EARTH_RADIUS_KM = 6371;
+export const EARTH_RADIUS_KM = 6371;
 
 export interface LatLng {
   latitude: number;

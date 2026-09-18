@@ -20,6 +20,7 @@ import {
 } from './labels';
 import { THEME_FILTER, toPoolQueries } from './tour-category';
 import { SpotDescriptionService } from '../service/spot-description.service';
+import { toDateString } from '../course-date.util';
 import { TourApiClient } from './tour-api.client';
 import { CoursePlan, TourSpot } from './types';
 
@@ -98,6 +99,7 @@ export class CourseGeneratorService {
       attempt.sigunguCode,
       theme,
       matchAttemptId,
+      attempt.travelDate,
     );
 
     for (const spot of plan.spots) {
@@ -105,6 +107,13 @@ export class CourseGeneratorService {
         this.logger.warn(`스팟 ${spot.order} 조건 완화: ${spot.relaxation}`);
       }
     }
+
+    this.logger.log(
+      `혼잡도 추정 ${toDateString(attempt.travelDate)}: ` +
+        plan.spots
+          .map((spot) => `${spot.order}=${spot.congestion?.toFixed(2)}`)
+          .join(' '),
+    );
 
     try {
       return await this.persist(
@@ -134,6 +143,7 @@ export class CourseGeneratorService {
     sigunguCode: string | null,
     theme: CourseTheme,
     seed: string,
+    travelDate?: Date,
   ): Promise<CoursePlan> {
     const template = templateFor(theme);
     const queries = toPoolQueries([
@@ -141,7 +151,8 @@ export class CourseGeneratorService {
       THEME_FILTER[theme],
     ]);
 
-    // 매칭이 시군구 단위로 성사됐으므로 후보도 그 범위로 좁힌다
+    // 매칭이 시군구 단위로 성사됐으므로 후보도 그 범위로 좁힌다.
+    // 여행일은 키에 넣지 않는다. 혼잡도는 받은 풀로 계산해서 날짜마다 다시 받을 필요가 없다
     const key = `${region}|${sigunguCode ?? ''}|${theme}`;
     const cached = this.pools.get(key);
 
@@ -157,11 +168,12 @@ export class CourseGeneratorService {
       );
     }
 
-    return buildCoursePlan({ region, theme, seed }, pool);
+    return buildCoursePlan({ region, theme, seed, travelDate }, pool);
   }
 
   /**
    * 결제로 넘기기 전에 코스를 만들 수 있는지 미리 본다.
+   * 여행일은 안 넘긴다. 코스가 나오냐는 후보 유무로 갈려서 혼잡도와 무관하다.
    *
    * 코스는 양쪽 결제가 끝난 뒤에 만들어진다. 거기서 후보가 모자라면
    * 돈은 냈는데 코스가 없는 상태가 된다. 실측으로 부산 북구(로컬맛집·액티비티),
