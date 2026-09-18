@@ -11,9 +11,11 @@ import { CourseRecommendService } from './service/course-recommend.service';
 import { CourseGeneratorService } from './algorithm/course-generator.service';
 import { TourApiClient } from './algorithm/tour-api.client';
 import {CourseReminderScheduler} from "./service/course-reminder.scheduler";
+import {VideoController} from "../video/controller/video.controller";
+import {VideoService} from "../video/service/video.service";
 
 @Module({
-  controllers: [CourseController],
+  controllers: [CourseController,VideoController],
   providers: [
     CourseQueryService,
     CourseAccessService,
@@ -26,6 +28,7 @@ import {CourseReminderScheduler} from "./service/course-reminder.scheduler";
     CourseGeneratorService,
     TourApiClient,
     CourseReminderScheduler,
+    VideoService
   ],
   exports: [CourseGeneratorService],
 })

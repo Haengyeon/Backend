@@ -835,7 +835,11 @@ model CourseVideo {
   videoUrl     String? @db.VarChar(500)
   thumbnailUrl String? @db.VarChar(500)
 
+  attemptCount Int     @default(0)
+  errorMessage String? @db.VarChar(200)
+
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   completedAt DateTime?
 
   course Course @relation(fields: [courseId], references: [id])
