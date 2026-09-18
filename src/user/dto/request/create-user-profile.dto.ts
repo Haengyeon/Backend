@@ -9,7 +9,6 @@ import {
     IsEnum,
     IsOptional,
     IsString,
-    IsUrl,
     Matches,
     MaxLength,
     MinLength,
@@ -63,8 +62,8 @@ export class CreateUserProfileDto {
 
     @ApiProperty({
         example: false,
-        description: 'true면 상대에게 직업을 노출하지 않는다.',
         required: false,
+        description: 'true면 상대에게 직업을 노출하지 않는다.',
     })
     @IsOptional()
     @IsBoolean()
@@ -82,14 +81,4 @@ export class CreateUserProfileDto {
     @ArrayUnique()
     @IsEnum(Hobby, { each: true })
     hobbies: Hobby[];
-
-    @ApiProperty({ description: '프로필 사진 URL' })
-    @IsUrl()
-    @MaxLength(500)
-    profileImageUrl: string;
-
-    @ApiProperty({ description: '전신 사진 URL' })
-    @IsUrl()
-    @MaxLength(500)
-    fullBodyImageUrl: string;
 }
