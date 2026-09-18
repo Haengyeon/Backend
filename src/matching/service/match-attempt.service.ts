@@ -24,8 +24,17 @@ import { MatchingPenaltyService } from './matching-penalty.service';
 import {calcAge} from "../../common/age.util";
 import { MATCHING_PAYMENT_AMOUNT } from "../../common/payment.constant";
 import { CourseGeneratorService } from '../../course/algorithm/course-generator.service';
+import { DummyPaymentService } from '../dummy/dummy-payment.service';
 
 const PAYMENT_WINDOW_MS = 6 * 60 * 60 * 1000; // 결제 유예 6시간
+
+/** 응답 처리에 필요한 한쪽 정보. 더미 여부까지 알아야 뒷정리를 다르게 할 수 있다. */
+interface AttemptSide {
+    id: string;
+    userId: string;
+    themes: CourseTheme[];
+    user: { isDummy: boolean };
+}
 
 @Injectable()
 export class MatchAttemptService {
@@ -37,6 +46,7 @@ export class MatchAttemptService {
         private readonly matchingEngine: MatchingEngineService,
         private readonly notification: NotificationService,
         private readonly courseGenerator: CourseGeneratorService,
+        private readonly dummyPayment: DummyPaymentService,
     ) {}
 
     async findOne(userId: string, matchAttemptId: string) {
@@ -129,23 +139,30 @@ export class MatchAttemptService {
      */
     private async cancelUnbuildable(
         attemptId: string,
-        myMatchingId: string,
-        otherMatchingId: string,
+        myMatching: AttemptSide,
+        otherMatching: AttemptSide,
     ) {
-        const cancelled = await this.prisma.$transaction(async (tx) => {
-            const updated = await tx.matchAttempt.update({
-                where: { id: attemptId },
-                data: { status: MatchAttemptStatus.CANCELLED },
-            });
+        const { cancelled, requeueIds } = await this.prisma.$transaction(
+            async (tx) => {
+                const updated = await tx.matchAttempt.update({
+                    where: { id: attemptId },
+                    data: { status: MatchAttemptStatus.CANCELLED },
+                });
 
-            await this.penalty.releaseWithoutPenalty(tx, myMatchingId);
-            await this.penalty.releaseWithoutPenalty(tx, otherMatchingId);
+                const ids: string[] = [];
 
-            return updated;
-        });
+                for (const side of [myMatching, otherMatching]) {
+                    const requeueId = await this.releaseSide(tx, side);
 
-        // 둘 다 조건 그대로 다시 후보를 찾는다
-        for (const matchingId of [myMatchingId, otherMatchingId]) {
+                    if (requeueId) ids.push(requeueId);
+                }
+
+                return { cancelled: updated, requeueIds: ids };
+            },
+        );
+
+        // 실제 사용자만 조건 그대로 다시 후보를 찾는다
+        for (const matchingId of requeueIds) {
             this.matchingEngine
                 .tryMatch(matchingId)
                 .catch((error) =>
@@ -156,20 +173,50 @@ export class MatchAttemptService {
         return cancelled;
     }
 
+    /**
+     * 매칭이 깨졌을 때 한쪽을 정리한다.
+     *
+     * 실제 사용자는 잘못이 없으므로 페널티 없이 재탐색으로 돌려보낸다.
+     * 더미는 돌려보내면 혼자 매칭 풀을 떠돌다 엉뚱한 사용자에게 붙으므로 종료시킨다.
+     * 더미의 Matching은 fallback이 그때그때 만드는 임시 데이터라 남겨 둘 이유도 없다.
+     *
+     * @returns 재탐색이 필요한 matchingId. 더미면 null.
+     */
+    private async releaseSide(
+        tx: any,
+        side: AttemptSide,
+    ): Promise<string | null> {
+        if (side.user.isDummy) {
+            await tx.matching.update({
+                where: { id: side.id },
+                data: {
+                    status: MatchingStatus.CANCELLED,
+                    endedAt: new Date(),
+                },
+            });
+
+            return null;
+        }
+
+        await this.penalty.releaseWithoutPenalty(tx, side.id);
+
+        return side.id;
+    }
+
     async respond(
         userId: string,
         matchAttemptId: string,
         dto: MatchAttemptDto,
     ) {
-        const attempt =
-            await this.prisma.matchAttempt.findUnique({
-                where: { id: matchAttemptId},
-                include: {
-                    matchingA: { include: { user: { select: { isDummy: true,},},},},
-                    matchingB: { include: { user: { select: { isDummy: true,},},},},
-                    responses: true,
-                },
-            });
+        const attempt = await this.prisma.matchAttempt.findUnique({
+            where: { id: matchAttemptId },
+            include: {
+                // 더미는 응답 이후 뒷정리가 달라서 isDummy까지 가져온다
+                matchingA: { include: { user: { select: { isDummy: true } } } },
+                matchingB: { include: { user: { select: { isDummy: true } } } },
+                responses: true,
+            },
+        });
 
         if (!attempt) {
             throw new NotFoundException('매칭 시도를 찾을 수 없습니다.');
@@ -199,8 +246,12 @@ export class MatchAttemptService {
         }
 
         // myMatching = 지금 응답을 보내는 사람 / otherMatching = 상대방
-        const myMatching = isSideA ? attempt.matchingA : attempt.matchingB;
-        const otherMatching = isSideA ? attempt.matchingB : attempt.matchingA;
+        const myMatching: AttemptSide = isSideA
+            ? attempt.matchingA
+            : attempt.matchingB;
+        const otherMatching: AttemptSide = isSideA
+            ? attempt.matchingB
+            : attempt.matchingA;
 
         // 이 응답으로 결제 단계에 들어가는지. 상대가 이미 수락해 뒀으면 그렇다.
         // (거절이면 위에서 이미 걸러졌으므로, 상대 응답이 있다면 반드시 ACCEPTED)
@@ -212,10 +263,10 @@ export class MatchAttemptService {
         // TourAPI를 부르므로 트랜잭션 밖에서 해야 한다 — 안에서 하면 그동안 락을 쥔다.
         const preflight = entersPayment
             ? await this.courseGenerator.preflight(
-                  attempt.region,
-                  attempt.sigunguCode,
-                  this.themeCandidates(attempt),
-              )
+                attempt.region,
+                attempt.sigunguCode,
+                this.themeCandidates(attempt),
+            )
             : null;
 
         if (preflight && !preflight.ok) {
@@ -223,7 +274,7 @@ export class MatchAttemptService {
                 `코스를 만들 수 없어 결제로 넘기지 않음: attempt=${attempt.id} ` +
                 `region=${attempt.region}/${attempt.sigunguCode}`,
             );
-            return this.cancelUnbuildable(attempt.id, myMatching.id, otherMatching.id);
+            return this.cancelUnbuildable(attempt.id, myMatching, otherMatching);
         }
 
         const result = await this.prisma.$transaction(async (tx) => {
@@ -242,35 +293,13 @@ export class MatchAttemptService {
                 });
 
                 // 거절한 쪽(나): 하루 카운트 +1, 한도 도달 시 EXHAUSTED, 아니면 RETRY_READY
-                await this.penalty.applyPenalty(
+                await this.penalty.applyPenalty(tx, myMatching.id);
+
+                // 거절당한 쪽(상대): 카운트 변화 없이 즉시 재탐색 가능 상태로 복귀
+                const requeueMatchingId = await this.releaseSide(
                     tx,
-                    myMatching.id,
+                    otherMatching,
                 );
-
-                let requeueMatchingId: string | null = null;
-
-                /*
-                 * 실제 상대라면 기존 동작:
-                 * 거절당한 사람은 잘못이 없으므로
-                 * penalty 없이 SEARCHING으로 복귀한다.
-                 *
-                 * 더미라면:
-                 * SEARCHING으로 돌려놓지 않는다.
-                 * 그대로 두면 혼자 매칭 풀을 돌아다니면서
-                 * 다른 실제 사용자와 임의로 매칭될 수 있다.
-                 */
-                if (otherMatching.user.isDummy) {
-                    await tx.matching.update({
-                        where: { id: otherMatching.id},
-                        data: {
-                            status: MatchingStatus.CANCELLED,
-                            endedAt: new Date(),
-                        },
-                    });
-                } else {
-                    await this.penalty.releaseWithoutPenalty(tx, otherMatching.id);
-                    requeueMatchingId = otherMatching.id;
-                }
 
                 return {
                     attempt: updatedAttempt,
@@ -334,6 +363,18 @@ export class MatchAttemptService {
         // 양쪽 다 수락해 결제 단계로 넘어간 경우에만 채워진다.
         // 결제 마감 시한이 걸린 이벤트라 실시간으로 알려야 한다.
         if (result.notifyPaymentPending) {
+            /*
+             * 상대가 더미라면 결제를 대신 완료해 둔다.
+             *
+             * 더미는 카카오 계정이 없어 결제창을 띄울 수 없다.
+             * 여기서 미리 APPROVED로 만들어 두면, 실제 사용자가 결제를 마치는 순간
+             * confirmIfBothPaid가 양쪽 완료를 확인해 매칭이 확정된다.
+             *
+             * 결제 대기로 넘어온 지금 처리하는 이유는, 수락 직후에 만들면
+             * 상대가 거절했을 때 종료된 매칭에 결제만 남기 때문이다.
+             */
+            await this.dummyPayment.payForDummies(attempt.id);
+
             void this.notification.sendToMany(
                 result.notifyPaymentPending,
                 NotificationType.PAYMENT_PENDING,

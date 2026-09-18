@@ -23,7 +23,6 @@ import {
 } from '../../course/algorithm/sigungu-name';
 import { REGION_LABEL } from '../../course/algorithm/labels';
 import { RegionPreferenceDto } from '../dto/request/region-preference.dto';
-import { sigunguNameOf } from '../../course/algorithm/sigungu-name';
 import {DummyMatchingService} from "../dummy/dummy-matching.service";
 
 @Injectable()

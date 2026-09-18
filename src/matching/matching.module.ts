@@ -7,10 +7,11 @@ import { MatchingEngineService } from './service/matching-engine.service';
 import { MatchAttemptService } from './service/match-attempt.service';
 import { MatchingPenaltyService } from './service/matching-penalty.service';
 import { MatchingDeadlineScheduler } from './service/matching-deadline.scheduler';
+import { DummyMatchingService } from './dummy/dummy-matching.service';
+import { DummyPaymentService } from './dummy/dummy-payment.service';
 import { SafetyModule } from '../safety/safety.module';
-import {PaymentModule} from "../payment/payment.module";
+import { PaymentModule } from '../payment/payment.module';
 import { CourseModule } from '../course/course.module';
-import {DummyMatchingService} from "./dummy/dummy-matching.service";
 
 @Module({
     // 차단한 상대를 후보에서 빼기 위해 BlockService가 필요하다.
@@ -25,7 +26,9 @@ import {DummyMatchingService} from "./dummy/dummy-matching.service";
         MatchAttemptService,
         MatchingPenaltyService,
         MatchingDeadlineScheduler,
+        // 심사·데모용. DEMO_MATCHING_ENABLED=true일 때만 실제로 동작한다.
         DummyMatchingService,
+        DummyPaymentService,
     ],
 })
 export class MatchingModule {}
