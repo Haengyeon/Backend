@@ -13,9 +13,11 @@ import { CourseRecommendScheduler } from './service/course-recommend.scheduler';
 import { CourseGeneratorService } from './algorithm/course-generator.service';
 import { TourApiClient } from './algorithm/tour-api.client';
 import { CourseReminderScheduler } from './service/course-reminder.scheduler';
+import {VideoController} from "../video/controller/video.controller";
+import {VideoService} from "../video/service/video.service";
 
 @Module({
-  controllers: [CourseController],
+  controllers: [CourseController,VideoController],
   providers: [
     CourseQueryService,
     CourseAccessService,
@@ -30,6 +32,7 @@ import { CourseReminderScheduler } from './service/course-reminder.scheduler';
     CourseGeneratorService,
     TourApiClient,
     CourseReminderScheduler,
+    VideoService
   ],
   // 홈 행사 목록(FestivalModule)도 같은 TourAPI 클라이언트를 쓴다
   exports: [CourseGeneratorService, TourApiClient, SpotDescriptionService],
