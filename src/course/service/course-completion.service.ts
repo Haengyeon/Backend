@@ -15,7 +15,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { CourseStatus } from '../../generated/prisma/enums';
 import { REGION_LABEL } from '../algorithm/labels';
-import { lumpedCellNameOf } from '../algorithm/sigungu-map-code';
+import { mapCellsOfSigungu } from '../algorithm/sigungu-cells';
 import { sigunguNameOf } from '../algorithm/sigungu-name';
 import { daysUntil } from '../course-date.util';
 import { CourseCompletionResponseDto } from '../dto/response/course-progress-response.dto';
@@ -160,11 +160,9 @@ export class CourseCompletionService {
         earnedStamps: mine.stamps.map((stamp) => ({
           region: stamp.region,
           regionLabel: REGION_LABEL[stamp.region],
-          // 지도가 구를 안 나눠 그린 칸은 칸 이름으로. 목록과 지도가 어긋나지 않게 한다
-          sigunguName:
-            lumpedCellNameOf(stamp.mapSigunguCode) ??
-            sigunguNameOf(stamp.region, stamp.sigunguCode),
-          mapSigunguCode: stamp.mapSigunguCode,
+          sigunguName: sigunguNameOf(stamp.region, stamp.sigunguCode),
+          // 수원시처럼 지도가 구별로 나눠 그린 곳은 여러 칸이 한꺼번에 나온다
+          mapSigunguCodes: mapCellsOfSigungu(stamp.region, stamp.sigunguCode),
           earnedAt: stamp.earnedAt,
         })),
         earnedPoints: COURSE_COMPLETE_POINT,

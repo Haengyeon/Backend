@@ -1,4 +1,4 @@
-// 시군구 번호를 한글 이름으로 바꾸는 표. (2026-09-01 기준 234개)
+// 시군구 번호를 한글 이름으로 바꾸는 표. (2026-09-16 기준 229개)
 //
 // TourAPI는 시군구를 '24' 같은 번호로 준다. 화면에는 "중구"라고 써야 한다.
 //
@@ -11,6 +11,9 @@
 // TourAPI에서 한 번 받아다 여기에 적어 뒀다. 볼 때마다 API를 부르면 느리고,
 // TourAPI가 멈추면 코스 화면도 같이 멈춘다.
 // 시군구가 합쳐지거나 새로 생기면 표를 다시 받아야 한다.
+//
+// 이 표가 곧 매칭 선택지다. 스탬프 지도 칸과 빈틈없이 맞물려야 해서
+// 폐지된 행정구역은 여기 두지 않고 아래 ABOLISHED_SIGUNGU로 뺐다.
 import { Region } from '../../generated/prisma/enums';
 
 export const SIGUNGU_NAME: Record<Region, Record<string, string>> = {
@@ -168,7 +171,6 @@ export const SIGUNGU_NAME: Record<Region, Record<string, string>> = {
     '6': '음성군',
     '7': '제천시',
     '8': '진천군',
-    '9': '청원군',
     '10': '청주시',
     '11': '충주시',
     '12': '증평군',
@@ -220,14 +222,12 @@ export const SIGUNGU_NAME: Record<Region, Record<string, string>> = {
     '3': '고성군',
     '4': '김해시',
     '5': '남해군',
-    '6': '마산시',
     '7': '밀양시',
     '8': '사천시',
     '9': '산청군',
     '10': '양산시',
     '12': '의령군',
     '13': '진주시',
-    '14': '진해시',
     '15': '창녕군',
     '16': '창원시',
     '17': '통영시',
@@ -277,10 +277,33 @@ export const SIGUNGU_NAME: Record<Region, Record<string, string>> = {
     '24': '화순군',
   },
   [Region.JEJU]: {
-    '1': '남제주군',
-    '2': '북제주군',
     '3': '서귀포시',
     '4': '제주시',
+  },
+};
+
+/**
+ * 폐지됐지만 TourAPI가 아직 주는 시군구.
+ *
+ * 골라도 갈 수 있는 곳이 아니라 위 표에서 뺐다. 그대로 두면 한 명이 "창원시",
+ * 다른 한 명이 "마산시"를 골랐을 때 같은 곳인데 매칭이 안 된다.
+ *
+ * 그래도 이름 조회와 정규화에는 남겨 둔다. TourAPI가 오래된 항목에 옛 코드를
+ * 붙여 주기 때문에, 지우면 그 장소의 시군구가 화면에서 사라진다.
+ */
+const ABOLISHED_SIGUNGU: Partial<
+  Record<Region, Record<string, { name: string; into: string }>>
+> = {
+  [Region.CHUNGBUK]: {
+    '9': { name: '청원군', into: '10' }, // 2014년 청주시로 통합
+  },
+  [Region.GYEONGNAM]: {
+    '6': { name: '마산시', into: '16' }, // 2010년 창원시로 통합
+    '14': { name: '진해시', into: '16' }, // 위와 같음
+  },
+  [Region.JEJU]: {
+    '1': { name: '남제주군', into: '3' }, // 2006년 서귀포시로 통합
+    '2': { name: '북제주군', into: '4' }, // 2006년 제주시로 통합
   },
 };
 
@@ -293,5 +316,26 @@ export function sigunguNameOf(
   code: string | null,
 ): string | null {
   if (!code) return null;
-  return SIGUNGU_NAME[region]?.[code] ?? null;
+  return (
+    SIGUNGU_NAME[region]?.[code] ??
+    ABOLISHED_SIGUNGU[region]?.[code]?.name ??
+    null
+  );
+}
+
+/**
+ * 폐지된 코드를 현행 코드로 바꾼다. 마산시(경남 6) -> 창원시(경남 16).
+ *
+ * 매칭 조건과 스탬프가 모두 이 값을 기준으로 움직인다. 정규화하지 않으면
+ * 같은 창원인데 조건이 안 맞아 매칭이 안 되고, 스탬프도 따로 쌓인다.
+ *
+ * 아는 코드가 아니면 null이다. 매칭 요청 검증은 이 null로 걸러낸다.
+ */
+export function normalizeSigunguCode(
+  region: Region,
+  code: string | null,
+): string | null {
+  if (!code) return null;
+  if (SIGUNGU_NAME[region]?.[code]) return code;
+  return ABOLISHED_SIGUNGU[region]?.[code]?.into ?? null;
 }

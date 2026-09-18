@@ -19,10 +19,13 @@ export class EarnedStampDto {
   sigunguName: string | null;
 
   @ApiProperty({
-    example: '11020',
-    description: '수집 지도에서 칠할 칸. 스탬프 하나가 칸 하나다',
+    type: [String],
+    example: ['31011', '31012', '31013', '31014'],
+    description:
+      '수집 지도에서 칠할 칸 전부. 스탬프 하나가 여러 칸일 수 있다 — ' +
+      '스탬프 단위는 시군구인데 지도는 수원시를 4구로 나눠 그린다',
   })
-  mapSigunguCode: string;
+  mapSigunguCodes: string[];
 
   @ApiProperty()
   earnedAt: Date;

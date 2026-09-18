@@ -12,7 +12,9 @@ import {PaymentModule} from './payment/payment.module';
 import {NotificationModule} from './notification/notification.module';
 import {RewardModule} from './reward/reward.module';
 import {SafetyModule} from './safety/safety.module';
+import {FestivalModule} from './festival/festival.module';
 import {ScheduleModule} from "@nestjs/schedule";
+import {VideoModule} from "./video/video.module";
 
 @Module({
     imports: [
@@ -28,6 +30,8 @@ import {ScheduleModule} from "@nestjs/schedule";
         NotificationModule,
         RewardModule,
         SafetyModule,
+        FestivalModule,
+        VideoModule,
     ],
     controllers: [AppController],
     providers: [AppService],

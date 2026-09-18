@@ -18,6 +18,19 @@ export class ChatRoomService {
         private readonly chatMessage: ChatMessageService,
     ) {}
 
+    /**
+     * 매칭이 취소되어 더 쓸 수 없게 된 채팅방을 닫는다.
+     *
+     * 코스를 못 만들어 환불한 경우에 부른다. 방을 남겨 두면 여행 정보는 없는데
+     * 대화창만 살아 있어서, 두 사람이 무슨 일이 생긴 건지 모른 채 서로 묻게 된다.
+     */
+    async disableForAttempt(matchAttemptId: string): Promise<void> {
+        await this.prisma.chatRoom.updateMany({
+            where: { matchAttemptId },
+            data: { status: ChatRoomStatus.DISABLED },
+        });
+    }
+
     // 결제가 양쪽 다 완료되어 매칭이 확정된 시점에 호출
     // 채팅방은 바로 열리지 않고 여행 전날 00시에 open으로 바뀜
     async createForConfirmedAttempt(

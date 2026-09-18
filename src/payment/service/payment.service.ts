@@ -10,6 +10,7 @@ import {PrismaService} from "../../prisma/prisma.service";
 import {KakaoPayClient} from "./kakao-pay.client";
 import {MatchAttemptStatus, MatchingStatus, PaymentStatus} from "../../generated/prisma/enums";
 import { CourseGeneratorService } from '../../course/algorithm/course-generator.service';
+import { CoursePlanningError } from '../../course/algorithm/course-planner';
 import {ChatRoomService} from "../../chat/service/chat-room.service";
 import { MATCHING_PAYMENT_AMOUNT } from "../../common/payment.constant";
 import {
@@ -295,14 +296,59 @@ export class PaymentService {
 
     // 확정되면 코스를 만든다.
     // TourAPI 호출이 섞여 있어 시간이 걸리므로 결제 응답을 막지 않고 던져 둔다.
-    // 실패하면 코스 없이 지나가므로 POST /api/v1/courses/regenerate로 다시 시도한다.
     this.courseGenerator
         .generateForMatchAttempt(matchAttemptId)
         .catch((error) =>
-            this.logger.error('매칭 확정 후 코스 생성 중 오류', error as Error),
+            this.onCourseGenerationFailed(matchAttemptId, error as Error),
         );
 
     return true;
+  }
+
+  /**
+   * 결제까지 끝났는데 코스를 못 만든 경우.
+   *
+   * 두 가지를 갈라서 본다.
+   *
+   *  - 후보가 구조적으로 모자란 경우(CoursePlanningError). 다시 불러도 결과가 같다.
+   *    받은 돈을 돌려준다. 원래는 결제 전 판정(MatchAttemptService.respond)이
+   *    걸렀어야 하는 건이라, 여기까지 왔다면 판정을 지나친 경로가 있다는 뜻이다.
+   *
+   *  - 그 밖의 오류(TourAPI 장애, 네트워크). 잠시 뒤에는 될 수 있다.
+   *    환불하지 않는다. 외부 서비스가 한 번 흔들렸다고 성사된 매칭을 깨면
+   *    두 사람이 이유도 모르고 취소를 당한다. POST /courses/regenerate로 다시 시도한다.
+   */
+  private async onCourseGenerationFailed(
+      matchAttemptId: string,
+      error: Error,
+  ): Promise<void> {
+    if (!(error instanceof CoursePlanningError)) {
+      this.logger.error('매칭 확정 후 코스 생성 중 오류', error);
+      return;
+    }
+
+    this.logger.error(
+        `코스를 만들 수 없어 환불합니다: attempt=${matchAttemptId} (${error.code})`,
+    );
+
+    try {
+      await this.refundAllForAttempt(matchAttemptId);
+
+      await this.prisma.matchAttempt.update({
+        where: { id: matchAttemptId },
+        data: { status: MatchAttemptStatus.CANCELLED },
+      });
+
+      // 채팅방은 확정과 동시에 열려 있다. 코스가 없는 방을 남겨 두면
+      // 두 사람이 여행 정보를 못 받은 채 대화창만 보게 된다.
+      await this.chatRoom.disableForAttempt(matchAttemptId);
+    } catch (refundError) {
+      // 환불 실패는 재시도 스케줄러가 다시 집어 간다
+      this.logger.error(
+          `코스 불가 환불 처리 실패: attempt=${matchAttemptId}`,
+          refundError as Error,
+      );
+    }
   }
 
   //결제 가능한 상태인지 검증

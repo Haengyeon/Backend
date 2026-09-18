@@ -19,6 +19,18 @@ export interface TourSpot {
   lclsSystm3: string | null;
 }
 
+/** 행사(searchFestival2) 1건. 날짜는 'YYYY-MM-DD' */
+export interface TourFestival {
+  contentId: string;
+  title: string;
+  address: string;
+  startDate: string;
+  endDate: string;
+  firstImage: string | null;
+  /** 행사 분류(전시회 EV030100 등). 취미에 맞는 행사를 앞에 둘 때 쓴다 */
+  lclsSystm3: string | null;
+}
+
 /** 대분류가 다른 코드를 함께 써야 해서(예: NA04 + VE03) 그룹으로 나눈다. */
 export interface CategoryGroup {
   lclsSystm1: string;
@@ -80,6 +92,13 @@ export interface CoursePlan {
   backtrackPenaltyKm: number;
   /** 체류 + 이동 합계(분) */
   durationMinutes: number;
+  /** 이동에만 드는 시간(분). 체류 시간은 빼고 */
+  moveMinutes: number;
+  /**
+   * 이동 시간이 하루 코스 예산 안에 드는지.
+   * false면 그 지역에서는 이만큼 움직이지 않고는 4곳을 못 채운다는 뜻이다.
+   */
+  withinMoveBudget: boolean;
 }
 
 export interface CourseBuildParams {

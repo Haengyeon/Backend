@@ -18,6 +18,9 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 RUN corepack enable
+RUN apk add --no-cache ffmpeg
+
+ENV FFMPEG_PATH=/usr/bin/ffmpeg
 
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
@@ -27,6 +30,8 @@ COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
 COPY package.json ./
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/assets ./assets
 
 EXPOSE 4000
 

@@ -19,6 +19,15 @@ export class RecommendedSpotDto {
   @ApiProperty({ nullable: true, example: '전통시장' })
   category: string | null;
 
+  @ApiProperty({
+    nullable: true,
+    example: '오래된 골목 시장으로 먹거리 가게가 모여 있다.',
+    description:
+      '장소 소개글. 코스 상세와 같은 기준으로 문장 끝에서 끊는다(보통 50자, 최대 100자). ' +
+      '관광공사에 소개글이 없는 장소는 null이고, 그때는 소개 문단을 숨긴다',
+  })
+  description: string | null;
+
   @ApiProperty({ example: '서울특별시 광진구 자양로' })
   address: string;
 

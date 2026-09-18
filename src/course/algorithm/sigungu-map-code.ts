@@ -347,34 +347,12 @@ export function mapSigunguCodeOf(
 }
 
 /**
- * 지도가 구를 나눠 그리지 않아 시 단위로만 찍히는 칸.
- *
- * 부천시는 지도에 구 경계가 아예 없고, 인천 중구·서구는 분구 이전 경계로 그려져 있다.
- * 스탬프는 칸 기준이라 원미구만 다녀와도 칠해지는 것은 부천시 전체다.
- * 이때 목록에 "부천시 원미구"라고 적으면 지도와 어긋나 보이므로 칸 이름을 쓴다.
- *
- * 값은 지도 파일이 그 칸에 붙여 둔 이름 그대로다.
- */
-const LUMPED_CELL_NAME: Record<string, string> = {
-  '31050': '부천시', // 원미구 · 소사구 · 오정구
-  '23010': '중구', // 인천 중구 · 제물포구 · 영종구
-  '23080': '서구', // 인천 서구 · 서해구 · 검단구
-};
-
-/**
- * 여러 구가 한 칸으로 묶인 지도 칸의 이름.
- *
- * 그런 칸이 아니면 null이고, 그때는 시군구 이름표(sigungu-name.ts)를 그대로 쓴다.
- */
-export function lumpedCellNameOf(mapSigunguCode: string): string | null {
-  return LUMPED_CELL_NAME[mapSigunguCode] ?? null;
-}
-
-/**
- * 지도에 있는 칸 수. 스탬프 수집 진행률의 분모다.
+ * 지도에 있는 칸 수.
  *
  * 표의 항목 수(283)가 아니라 결과값의 가짓수를 센다. 행정구역 표준코드 여럿이 한 칸으로
  * 접히기 때문이다 — 부천시 원미·소사·오정구는 지도에 부천시 하나로 그려져 있다.
- * 표를 고치면 이 값도 따라 움직인다.
+ *
+ * 수집 진행률의 분모는 이게 아니라 시군구 수(sigungu-cells.ts의 SIGUNGU_TOTAL)다.
+ * 여기서는 시군구 표가 칸을 하나도 빠짐없이 덮는지 검사하는 데 쓴다.
  */
 export const MAP_SIGUNGU_TOTAL = new Set(Object.values(MAP_SIGUNGU_CODE)).size;

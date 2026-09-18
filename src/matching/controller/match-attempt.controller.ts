@@ -50,6 +50,10 @@ export class MatchAttemptController {
     @Post(':matchAttemptId/respond')
     @ApiOperation({
         summary: '매칭 시도 수락/거절 응답',
+        description:
+            '둘 다 수락하면 PAYMENT_PENDING으로 넘어간다. ' +
+            '다만 그 지역·테마로 코스를 만들 수 없으면 결제로 넘기지 않고 CANCELLED가 되고, ' +
+            '양쪽 다 페널티 없이 재탐색으로 돌아간다.',
     })
     @ApiParam({
         name: 'matchAttemptId',

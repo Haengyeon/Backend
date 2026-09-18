@@ -13,9 +13,16 @@ import {
   MatchingStatus,
   UserStatus,
 } from '../../generated/prisma/enums';
+import type { Region } from '../../generated/prisma/enums';
 import { CreateMatchingDto } from '../dto/request/create-matching.dto';
 import { UpdateMatchingDto } from '../dto/request/update-matching.dto';
 import { MatchingEngineService } from './matching-engine.service';
+import {
+  normalizeSigunguCode,
+  sigunguNameOf,
+} from '../../course/algorithm/sigungu-name';
+import { REGION_LABEL } from '../../course/algorithm/labels';
+import { RegionPreferenceDto } from '../dto/request/region-preference.dto';
 import { sigunguNameOf } from '../../course/algorithm/sigungu-name';
 import {DummyMatchingService} from "../dummy/dummy-matching.service";
 
@@ -52,12 +59,10 @@ export class MatchingService {
       data: {
         userId,
         regionPreferences: {
-          create: dto.regionPreferences.map((pref, index) => ({
-            region: pref.region,
-            sigunguCode: pref.sigunguCode,
-            // 배열 순서가 곧 순위다. 1순위부터 시작하도록 +1
-            priority: index + 1,
-          })),
+          // 배열 순서가 곧 순위다. 1순위부터 시작하도록 +1
+          create: this.toRegionPreferences(dto.regionPreferences).map(
+            (pref, index) => ({ ...pref, priority: index + 1 }),
+          ),
         },
         ageMin: dto.ageMin,
         ageMax: dto.ageMax,
@@ -128,11 +133,9 @@ export class MatchingService {
         ...(dto.regionPreferences && {
           regionPreferences: {
             deleteMany: {},
-            create: dto.regionPreferences.map((pref, index) => ({
-              region: pref.region,
-              sigunguCode: pref.sigunguCode,
-              priority: index + 1,
-            })),
+            create: this.toRegionPreferences(dto.regionPreferences).map(
+              (pref, index) => ({ ...pref, priority: index + 1 }),
+            ),
           },
         }),
         ageMin: dto.ageMin,
@@ -305,6 +308,42 @@ export class MatchingService {
           '프로필 작성이 필요합니다.',
       );
     }
+  }
+
+  /**
+   * 희망 지역을 저장할 수 있는 형태로 만든다.
+   *
+   * 두 가지를 한다.
+   *  - 실재하지 않는 시군구 코드를 막는다. DTO는 숫자 형식만 보기 때문에
+   *    서울 '999' 같은 값이 통과하는데, 그러면 아무와도 안 맞다가 어쩌다
+   *    매칭돼도 TourAPI에 후보가 없어 결제까지 끝난 뒤 코스 생성이 터진다.
+   *  - 폐지된 코드를 현행으로 옮긴다. 한 명이 "창원시", 다른 한 명이 "마산시"를
+   *    고르면 같은 곳인데 매칭이 안 되기 때문이다.
+   *
+   * 정규화하면 서로 달랐던 두 선택이 같아질 수 있어(마산시·진해시 -> 창원시)
+   * 여기서 한 번 더 중복을 뺀다. 순위가 높은(앞선) 쪽을 남긴다.
+   */
+  private toRegionPreferences(preferences: RegionPreferenceDto[]) {
+    const seen = new Set<string>();
+    const normalized: { region: Region; sigunguCode: string }[] = [];
+
+    for (const pref of preferences) {
+      const sigunguCode = normalizeSigunguCode(pref.region, pref.sigunguCode);
+
+      if (!sigunguCode) {
+        throw new BadRequestException(
+          `${REGION_LABEL[pref.region]}에 없는 시군구입니다: ${pref.sigunguCode}`,
+        );
+      }
+
+      const key = `${pref.region}:${sigunguCode}`;
+      if (seen.has(key)) continue;
+
+      seen.add(key);
+      normalized.push({ region: pref.region, sigunguCode });
+    }
+
+    return normalized;
   }
 
   private validateAgeRange(ageMin: number, ageMax: number) {
