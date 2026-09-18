@@ -26,6 +26,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    command: >
+      sh -c "
+        pnpm prisma migrate deploy &&
+        node dist/src/main.js
+      "
     ports:
       - '4000:4000'
     volumes:
