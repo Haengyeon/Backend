@@ -2,6 +2,7 @@
 //
 // 실제 TourAPI는 부르지 않고 fetch를 목 처리한다.
 import { Logger } from '@nestjs/common';
+import { Region } from '../../generated/prisma/enums';
 import { TourApiClient } from './tour-api.client';
 
 function festivalBody(items: unknown[]) {
@@ -21,10 +22,19 @@ function festivalBody(items: unknown[]) {
 
 let fetchMock: jest.SpyInstance;
 
-function respond(body: unknown, status = 200) {
+function respond(body: unknown, status = 200, remaining = 900, limit = 1000) {
+  // 클라이언트가 본문을 글자로 먼저 받는다(게이트웨이가 XML로 덮어쓰는 경우가 있어서).
+  // 문자열을 그대로 넘기면 XML 오류 응답을 흉내낼 수 있다.
+  const text = typeof body === 'string' ? body : JSON.stringify(body);
   fetchMock.mockResolvedValue({
     ok: status >= 200 && status < 300,
     status,
+    // 클라이언트가 잔여 호출 수를 여기서 읽는다
+    headers: new Headers({
+      'x-ratelimit-limit': String(limit),
+      'x-ratelimit-remaining': String(remaining),
+    }),
+    text: async () => text,
     json: async () => body,
   } as Response);
 }
@@ -37,6 +47,7 @@ beforeEach(() => {
   fetchMock = jest.spyOn(global, 'fetch');
   // 실패 경로에서 찍는 경고로 테스트 출력이 지저분해지지 않게 한다
   jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
 });
 
 afterEach(() => {
@@ -131,5 +142,120 @@ describe('fetchOngoingFestivals', () => {
         new TourApiClient().fetchOngoingFestivals('2026-09-17'),
       ).resolves.toBeNull();
     });
+  });
+});
+
+// 일일 한도를 넘기면 data.go.kr이 200에 오류를 담아 보낸다. 걸러내지 않으면
+// "결과 0건"과 구분되지 않아, 홈이 비고 코스 생성이 실패해도 원인을 알 수 없다.
+describe('일일 한도 초과', () => {
+  let error: jest.SpyInstance;
+
+  beforeEach(() => {
+    error = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+  });
+
+  it('JSON으로 오면 빈 결과가 아니라 실패로 다룬다', async () => {
+    respond({
+      resultCode: '22',
+      resultMsg: 'LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR',
+    });
+
+    await expect(
+      new TourApiClient().fetchOngoingFestivals('2026-09-17'),
+    ).resolves.toBeNull();
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining('일일 한도를 초과'),
+    );
+  });
+
+  it('게이트웨이가 XML로 덮어써도 알아챈다', async () => {
+    // _type=json을 줘도 게이트웨이 단계 오류는 XML로 오는 경우가 있다
+    respond(
+      '<OpenAPI_ServiceResponse><cmmMsgHeader>' +
+        '<returnReasonCode>22</returnReasonCode>' +
+        '</cmmMsgHeader></OpenAPI_ServiceResponse>',
+    );
+
+    await expect(
+      new TourApiClient().fetchOngoingFestivals('2026-09-17'),
+    ).resolves.toBeNull();
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining('일일 한도를 초과'),
+    );
+  });
+
+  it('후보 조회도 조용히 0건으로 넘어가지 않는다', async () => {
+    // 여기서 놓치면 코스 생성이 "갈 만한 곳이 없다"로 실패한다
+    respond({
+      resultCode: '22',
+      resultMsg: 'LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR',
+    });
+
+    await expect(
+      new TourApiClient().fetchPool(Region.SEOUL, [{ contentTypeId: '12' }]),
+    ).resolves.toEqual([]);
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining('일일 한도를 초과'),
+    );
+  });
+});
+
+// data.go.kr이 응답 헤더로 잔여 호출 수를 알려준다. 직접 세는 것보다 정확하다 —
+// 재시작해도 이어지고 한도까지 알려줘서 개발/운영 계정을 코드가 몰라도 된다.
+describe('잔여 호출 수', () => {
+  it('헤더에서 읽어 둔다', async () => {
+    respond(festivalBody([]), 200, 742, 1000);
+
+    const client = new TourApiClient();
+    await client.fetchOngoingFestivals('2026-09-17');
+
+    expect(client.quotaRemaining()).toEqual({
+      searchFestival2: { limit: 1000, remaining: 742 },
+    });
+  });
+
+  it('한도의 20% 아래로 떨어지면 알린다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    respond(festivalBody([]), 200, 150, 1000);
+
+    await new TourApiClient().fetchOngoingFestivals('2026-09-17');
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('남은 호출이 150건'),
+    );
+  });
+
+  it('다 쓰면 경고가 아니라 오류로 남긴다', async () => {
+    const error = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    respond(festivalBody([]), 200, 0, 1000);
+
+    await new TourApiClient().fetchOngoingFestivals('2026-09-17');
+
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining('일일 한도를 다 썼습니다'),
+    );
+  });
+
+  it('헤더가 없으면 아무것도 기록하지 않는다', async () => {
+    // 프록시가 헤더를 떼는 경우가 있다. 그래도 조회 자체는 되어야 한다
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => JSON.stringify(festivalBody([])),
+      json: async () => festivalBody([]),
+    } as Response);
+
+    const client = new TourApiClient();
+    await expect(client.fetchOngoingFestivals('2026-09-17')).resolves.toEqual(
+      [],
+    );
+    expect(client.quotaRemaining()).toEqual({});
   });
 });
