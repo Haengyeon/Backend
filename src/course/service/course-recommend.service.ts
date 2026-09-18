@@ -18,6 +18,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CourseTheme, Hobby } from '../../generated/prisma/enums';
+import {
+  decodeOffsetCursor,
+  encodeOffsetCursor,
+} from '../../common/offset-cursor.util';
 import { THEME_ORDER, totalAffinity } from '../algorithm/affinity';
 import { categoryLabelOf, regionFromAddress } from '../algorithm/labels';
 import { sanitizePool } from '../algorithm/first-date-policy';
@@ -28,6 +32,8 @@ import {
 } from '../algorithm/tour-category';
 import { TourApiClient } from '../algorithm/tour-api.client';
 import { SpotFilter, TourSpot } from '../algorithm/types';
+import { summarizeDescription } from '../course-text.util';
+import { SpotDescriptionService } from './spot-description.service';
 import {
   RECOMMEND_DEFAULT_LIMIT,
   RECOMMEND_MAX_LIMIT,
@@ -37,8 +43,18 @@ import {
   RecommendedSpotDto,
 } from '../dto/response/recommended-response.dto';
 
-/** 테마 조합당 캐시 유지 시간. 관광지 목록은 자주 바뀌지 않는다 */
-const CACHE_TTL_MS = 60 * 60 * 1000;
+/**
+ * 테마 조합당 캐시 유지 시간.
+ *
+ * 1시간이던 때는 같은 조합을 하루에 24번까지 다시 받았다. 근거가 있어서 그랬던 게
+ * 아니라 처음에 보수적으로 잡은 값이었다. 관광지 목록은 그렇게 자주 바뀌지 않는다 —
+ * areaBasedSyncList2로 확인해 보면 변경분이 보름에 수십 건 수준이다.
+ *
+ * 하루로 늘리면 호출이 사용자 수와 무관해진다. 테마 3개 조합이 최대 56가지이므로,
+ * 사람이 몇 명이 오든 조합당 하루 한 번씩 = 하루 56회가 상한이 된다.
+ * 개발계정 한도가 엔드포인트별 1,000건이라 이 상한이 있는 게 중요하다.
+ */
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** 취미로 뽑을 테마 수. 너무 많으면 취향과 상관없는 곳까지 섞인다 */
 const THEMES_FROM_HOBBIES = 3;
@@ -61,6 +77,7 @@ export class CourseRecommendService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tourApi: TourApiClient,
+    private readonly spotDescriptions: SpotDescriptionService,
   ) {}
 
   async recommend(
@@ -71,7 +88,7 @@ export class CourseRecommendService {
       Math.max(query.limit ?? RECOMMEND_DEFAULT_LIMIT, 1),
       RECOMMEND_MAX_LIMIT,
     );
-    const offset = decodeCursor(query.cursor);
+    const offset = decodeOffsetCursor(query.cursor);
 
     const themes = await this.themesFromHobbies(userId);
     const pool = await this.loadPool(themes);
@@ -82,10 +99,13 @@ export class CourseRecommendService {
 
     const page = items.slice(offset, offset + take);
     const hasMore = offset + take < items.length;
+    const descriptions = await this.descriptionsOf(page);
 
     return {
-      items: page.map((spot) => this.toDto(spot)),
-      nextCursor: hasMore ? encodeCursor(offset + take) : null,
+      items: page.map((spot) =>
+        this.toDto(spot, descriptions.get(spot.contentId) ?? null),
+      ),
+      nextCursor: hasMore ? encodeOffsetCursor(offset + take) : null,
       hasMore,
     };
   }
@@ -138,6 +158,30 @@ export class CourseRecommendService {
     );
   }
 
+  /**
+   * 추천에 나올 만한 장소의 소개글을 미리 받아 둔다. 스케줄러가 새벽에 부른다.
+   *
+   * 낮에 사용자가 홈을 열 때 detailCommon2를 부르지 않게 하는 게 목적이다.
+   * 같은 호출이라도 새벽에 정해진 양만 쓰면 한도를 예측할 수 있다.
+   *
+   * 테마를 전부 넣어 가장 넓은 풀을 받는다. 어떤 사용자의 조합이든 이 풀의
+   * 부분집합이라, 여기만 채워 두면 대부분 DB에서 해결된다.
+   *
+   * 아직 안 받은 것만 골라 예산만큼 처리해서, 날마다 다음 장소로 넘어간다.
+   */
+  async warmDescriptions(budget: number): Promise<number> {
+    const pool = await this.loadPool(Object.values(CourseTheme));
+
+    const pending = await this.spotDescriptions.unknownAmong(
+      pool.map((spot) => spot.contentId),
+      budget,
+    );
+    if (pending.length === 0) return 0;
+
+    await this.spotDescriptions.overviewsOf(pending);
+    return pending.length;
+  }
+
   private async loadPool(themes: CourseTheme[]): Promise<TourSpot[]> {
     const key = [...themes].sort().join(',');
     const cached = this.cache.get(key);
@@ -165,13 +209,42 @@ export class CourseRecommendService {
     return spots;
   }
 
-  private toDto(spot: TourSpot): RecommendedSpotDto {
+  /**
+   * 이번 페이지에 나갈 장소의 소개글.
+   *
+   * 목록 조회에는 소개글이 없어서 장소마다 한 번 더 불러야 한다.
+   * 후보 전체를 부르면 TourAPI 한도가 녹으므로 화면에 나갈 장소만 맡긴다.
+   *
+   * 실제 호출 여부는 SpotDescriptionService가 정한다 — DB에 있으면 안 부른다.
+   * 요약은 여기서 한다. DB에는 원문이 들어 있어서 요약 규칙이 바뀌어도
+   * TourAPI를 다시 부를 일이 없다.
+   */
+  private async descriptionsOf(
+    spots: TourSpot[],
+  ): Promise<Map<string, string | null>> {
+    const overviews = await this.spotDescriptions.overviewsOf(
+      spots.map((spot) => spot.contentId),
+    );
+
+    return new Map(
+      spots.map((spot) => [
+        spot.contentId,
+        summarizeDescription(overviews.get(spot.contentId) ?? null),
+      ]),
+    );
+  }
+
+  private toDto(
+    spot: TourSpot,
+    description: string | null,
+  ): RecommendedSpotDto {
     return {
       contentId: spot.contentId,
       name: spot.title,
       // 전국 조회는 areaCode가 비어 오므로 주소에서 되짚는다
       region: regionFromAddress(spot.address),
       category: categoryLabelOf(spot.lclsSystm1, spot.lclsSystm2),
+      description,
       address: spot.address,
       latitude: spot.latitude,
       longitude: spot.longitude,
@@ -192,25 +265,4 @@ function rank(spots: TourSpot[]): TourSpot[] {
     if (landmark !== 0) return landmark;
     return a.contentId.localeCompare(b.contentId);
   });
-}
-
-/** 커서는 목록에서 몇 번째부터 볼지만 담는다 */
-function encodeCursor(offset: number): string {
-  return Buffer.from(JSON.stringify({ offset })).toString('base64');
-}
-
-function decodeCursor(cursor?: string): number {
-  if (!cursor) return 0;
-
-  try {
-    const parsed = JSON.parse(Buffer.from(cursor, 'base64').toString()) as {
-      offset?: unknown;
-    };
-    return typeof parsed.offset === 'number' && parsed.offset >= 0
-      ? parsed.offset
-      : 0;
-  } catch {
-    // 손으로 아무 값이나 넣어도 첫 페이지를 보여준다
-    return 0;
-  }
 }

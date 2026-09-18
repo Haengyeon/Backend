@@ -37,13 +37,14 @@ function pool(count: number, spacingKm: number): TourSpot[] {
   });
 }
 
-/** fetchPool 응답만 바꿔 끼운 생성기. DB는 안 쓴다 */
+/** fetchPool 응답만 바꿔 끼운 생성기. 사전 판정은 DB도 소개글도 안 쓴다 */
 function buildService(fetchPool: jest.Mock) {
   return new CourseGeneratorService(
     {} as never,
     {
       fetchPool,
     } as unknown as TourApiClient,
+    {} as never,
   );
 }
 
@@ -130,5 +131,42 @@ describe('preflight', () => {
     const result = await service.preflight(Region.SEOUL, '24', THEMES);
 
     expect(result.ok).toBe(true);
+  });
+});
+
+// 매칭 한 건이 같은 풀을 여러 번 받는다 — 사전 판정에서 테마마다 한 번,
+// 결제 뒤 실제 생성에서 또 한 번. 개발계정 한도가 엔드포인트별 1,000건이라 크다.
+describe('후보 풀 캐시', () => {
+  it('같은 지역·테마는 TourAPI를 다시 부르지 않는다', async () => {
+    const fetchPool = jest.fn().mockResolvedValue(pool(12, 1));
+    const service = buildService(fetchPool);
+
+    await service.preflight(Region.SEOUL, '24', [CourseTheme.NATURE_HEALING]);
+    await service.preflight(Region.SEOUL, '24', [CourseTheme.NATURE_HEALING]);
+
+    expect(fetchPool).toHaveBeenCalledTimes(1);
+  });
+
+  it('시군구가 다르면 따로 받는다', async () => {
+    // 시군구 코드는 시·도 안에서만 유일해서, 지역을 빼면 엉뚱한 풀을 쓰게 된다
+    const fetchPool = jest.fn().mockResolvedValue(pool(12, 1));
+    const service = buildService(fetchPool);
+
+    await service.preflight(Region.SEOUL, '24', [CourseTheme.NATURE_HEALING]);
+    await service.preflight(Region.SEOUL, '17', [CourseTheme.NATURE_HEALING]);
+
+    expect(fetchPool).toHaveBeenCalledTimes(2);
+  });
+
+  it('테마가 다르면 따로 받는다', async () => {
+    const fetchPool = jest.fn().mockResolvedValue(pool(12, 1));
+    const service = buildService(fetchPool);
+
+    await service.preflight(Region.SEOUL, '24', [CourseTheme.NATURE_HEALING]);
+    await service.preflight(Region.SEOUL, '24', [
+      CourseTheme.LOCAL_FOOD_MARKET,
+    ]);
+
+    expect(fetchPool).toHaveBeenCalledTimes(2);
   });
 });

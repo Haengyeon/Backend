@@ -19,8 +19,9 @@ import {
   categoryLabelOf,
 } from './labels';
 import { THEME_FILTER, toPoolQueries } from './tour-category';
+import { SpotDescriptionService } from '../service/spot-description.service';
 import { TourApiClient } from './tour-api.client';
-import { CoursePlan } from './types';
+import { CoursePlan, TourSpot } from './types';
 
 /** 결제 전 판정 결과 */
 export interface CoursePreflight {
@@ -32,13 +33,36 @@ export interface CoursePreflight {
   withinMoveBudget: boolean;
 }
 
+/**
+ * 지역·테마별 후보 풀을 들고 있는 시간.
+ *
+ * 관광지 목록은 하루에도 거의 안 바뀐다. 홈 추천 쪽과 같은 이유로 하루를 통째로 쓴다.
+ */
+const POOL_TTL_MS = 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class CourseGeneratorService {
   private readonly logger = new Logger(CourseGeneratorService.name);
 
+  /**
+   * 지역·테마별 후보 풀.
+   *
+   * 매칭 한 건이 같은 풀을 최소 두 번 받는다 — 결제 전 사전 판정에서 한 번,
+   * 결제 후 실제 생성에서 또 한 번. 사전 판정이 테마를 여러 개 시도하면 그만큼 는다.
+   * 같은 시군구·테마로 성사된 다른 커플도 결국 같은 목록을 받는다.
+   *
+   * 키에 시군구가 들어가는 건 코드가 시·도 안에서만 유일하기 때문이다.
+   * 서울 1번과 부산 1번은 다른 구라 지역을 빼면 엉뚱한 풀을 쓰게 된다.
+   */
+  private readonly pools = new Map<
+    string,
+    { spots: TourSpot[]; expiresAt: number }
+  >();
+
   constructor(
-      private readonly prisma: PrismaService,
-      private readonly tourApi: TourApiClient,
+    private readonly prisma: PrismaService,
+    private readonly tourApi: TourApiClient,
+    private readonly spotDescriptions: SpotDescriptionService,
   ) {}
 
   // 만들기 전에 이미 있는지부터 본다.
@@ -48,7 +72,7 @@ export class CourseGeneratorService {
   //
   // 결제 승인이 두 번 들어오는 경우를 대비한 것이라 평소엔 걸릴 일이 없다.
   async generateForMatchAttempt(
-      matchAttemptId: string,
+    matchAttemptId: string,
   ): Promise<{ id: string }> {
     const existing = await this.findCourseId(matchAttemptId);
     if (existing) return existing;
@@ -63,17 +87,17 @@ export class CourseGeneratorService {
     });
     if (!attempt) {
       throw new NotFoundException(
-          `MatchAttempt를 찾을 수 없습니다: ${matchAttemptId}`,
+        `MatchAttempt를 찾을 수 없습니다: ${matchAttemptId}`,
       );
     }
 
     const theme = this.decideTheme(attempt);
 
     const plan = await this.planCourse(
-        attempt.region,
-        attempt.sigunguCode,
-        theme,
-        matchAttemptId,
+      attempt.region,
+      attempt.sigunguCode,
+      theme,
+      matchAttemptId,
     );
 
     for (const spot of plan.spots) {
@@ -84,10 +108,10 @@ export class CourseGeneratorService {
 
     try {
       return await this.persist(
-          matchAttemptId,
-          attempt.travelDate,
-          attempt.sigunguCode,
-          plan,
+        matchAttemptId,
+        attempt.travelDate,
+        attempt.sigunguCode,
+        plan,
       );
     } catch (error) {
       // 동시 호출로 다른 쪽이 먼저 만든 경우 (matchAttemptId unique 위반)
@@ -118,11 +142,20 @@ export class CourseGeneratorService {
     ]);
 
     // 매칭이 시군구 단위로 성사됐으므로 후보도 그 범위로 좁힌다
-    const pool = await this.tourApi.fetchPool(region, queries, sigunguCode);
+    const key = `${region}|${sigunguCode ?? ''}|${theme}`;
+    const cached = this.pools.get(key);
 
-    this.logger.log(
-      `후보 풀 ${pool.length}건 (region=${region}/${sigunguCode}, theme=${theme}, 호출 ${queries.length}회)`,
-    );
+    let pool: TourSpot[];
+    if (cached && cached.expiresAt > Date.now()) {
+      pool = cached.spots;
+    } else {
+      pool = await this.tourApi.fetchPool(region, queries, sigunguCode);
+      this.pools.set(key, { spots: pool, expiresAt: Date.now() + POOL_TTL_MS });
+
+      this.logger.log(
+        `후보 풀 ${pool.length}건 (region=${region}/${sigunguCode}, theme=${theme}, 호출 ${queries.length}회)`,
+      );
+    }
 
     return buildCoursePlan({ region, theme, seed }, pool);
   }
@@ -200,21 +233,21 @@ export class CourseGeneratorService {
     };
   }): CourseTheme {
     const commonHobbies = intersectHobbies(
-        attempt.matchingA.user.profile?.hobbies ?? [],
-        attempt.matchingB.user.profile?.hobbies ?? [],
+      attempt.matchingA.user.profile?.hobbies ?? [],
+      attempt.matchingB.user.profile?.hobbies ?? [],
     );
 
     const picked = selectTheme(
-        attempt.matchingA.themes,
-        attempt.matchingB.themes,
-        commonHobbies,
+      attempt.matchingA.themes,
+      attempt.matchingB.themes,
+      commonHobbies,
     );
 
     if (!picked) return attempt.theme;
 
     if (picked.theme !== attempt.theme) {
       this.logger.log(
-          `테마 재선정: ${attempt.theme} -> ${picked.theme} ` +
+        `테마 재선정: ${attempt.theme} -> ${picked.theme} ` +
           `(공통취미 ${commonHobbies.join(',') || '없음'}, ` +
           `점수 ${picked.scores.map((s) => `${s.theme}:${s.score}`).join(' ')})`,
       );
@@ -232,18 +265,20 @@ export class CourseGeneratorService {
 
   //Course + CourseSpot + CourseMission 저장
   private async persist(
-      matchAttemptId: string,
-      travelDate: Date,
-      sigunguCode: string,
-      plan: CoursePlan,
+    matchAttemptId: string,
+    travelDate: Date,
+    sigunguCode: string,
+    plan: CoursePlan,
   ): Promise<{ id: string }> {
     const regionLabel = REGION_LABEL[plan.region];
     const themeLabel = THEME_LABEL[plan.theme];
 
     // 소개글은 목록 조회에 없어서 장소 4곳만 따로 받아온다.
     // 트랜잭션 밖에서 부른다 — 남의 서버를 기다리는 동안 DB 커넥션을 붙잡지 않는다.
-    const overviews = await this.tourApi.fetchOverviews(
-        plan.spots.map((planned) => planned.spot.contentId),
+    //
+    // 홈 추천과 같은 캐시를 본다. 추천에 한 번 나온 장소면 여기서는 안 부른다.
+    const overviews = await this.spotDescriptions.overviewsOf(
+      plan.spots.map((planned) => planned.spot.contentId),
     );
 
     return this.prisma.$transaction(async (tx) => {
@@ -281,8 +316,8 @@ export class CourseGeneratorService {
             legalSigunguCode: planned.spot.legalSigunguCode,
             role: planned.role,
             category: categoryLabelOf(
-                planned.spot.lclsSystm1,
-                planned.spot.lclsSystm2,
+              planned.spot.lclsSystm1,
+              planned.spot.lclsSystm2,
             ),
             latitude: planned.spot.latitude,
             longitude: planned.spot.longitude,
