@@ -7,8 +7,10 @@ import { MatchingEngineService } from './service/matching-engine.service';
 import { MatchAttemptService } from './service/match-attempt.service';
 import { MatchingPenaltyService } from './service/matching-penalty.service';
 import { MatchingDeadlineScheduler } from './service/matching-deadline.scheduler';
+import { DummyMatchingService } from './dummy/dummy-matching.service';
+import { DummyPaymentService } from './dummy/dummy-payment.service';
 import { SafetyModule } from '../safety/safety.module';
-import {PaymentModule} from "../payment/payment.module";
+import { PaymentModule } from '../payment/payment.module';
 import { CourseModule } from '../course/course.module';
 
 @Module({
@@ -24,6 +26,9 @@ import { CourseModule } from '../course/course.module';
         MatchAttemptService,
         MatchingPenaltyService,
         MatchingDeadlineScheduler,
+        // 심사·데모용. DEMO_MATCHING_ENABLED=true일 때만 실제로 동작한다.
+        DummyMatchingService,
+        DummyPaymentService,
     ],
 })
 export class MatchingModule {}

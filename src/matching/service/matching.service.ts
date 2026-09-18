@@ -23,6 +23,7 @@ import {
 } from '../../course/algorithm/sigungu-name';
 import { REGION_LABEL } from '../../course/algorithm/labels';
 import { RegionPreferenceDto } from '../dto/request/region-preference.dto';
+import {DummyMatchingService} from "../dummy/dummy-matching.service";
 
 @Injectable()
 export class MatchingService {
@@ -31,6 +32,7 @@ export class MatchingService {
   constructor(
       private readonly prisma: PrismaService,
       private readonly matchingEngine: MatchingEngineService,
+      private readonly dummyMatching: DummyMatchingService,
   ) {}
 
   async create(userId: string, dto: CreateMatchingDto) {
@@ -74,12 +76,28 @@ export class MatchingService {
       },
     });
 
-    // 조건 저장 직후 즉시 후보 탐색을 시도한다. 실패해도 이 API 응답 자체는 성공으로 처리하고
-    // Matching은 SEARCHING 상태로 남아, 추후 스케줄러(시간초과 이슈)가 재시도한다.
     try {
-      await this.matchingEngine.tryMatch(matching.id);
+      const attempt =
+          await this.matchingEngine.tryMatch(
+              matching.id,
+          );
+
+      /*
+       * 실제 사용자 후보를 먼저 탐색한다.
+       *
+       * 실제 후보가 하나라도 매칭되었다면
+       * 더미 fallback은 절대 실행하지 않는다.
+       */
+      if (!attempt) {
+        await this.dummyMatching.tryFallback(
+            matching.id,
+        );
+      }
     } catch (error) {
-      this.logger.error('즉시 매칭 시도 중 오류 발생', error as Error);
+      this.logger.error(
+          '즉시 매칭 시도 중 오류 발생',
+          error as Error,
+      );
     }
 
     // tryMatch가 그 자리에서 바로 상대를 찾았을 수도 있어서, currentAttempt까지 같이 조회해서 반환
@@ -182,9 +200,21 @@ export class MatchingService {
     });
 
     try {
-      await this.matchingEngine.tryMatch(matchingId);
+      const attempt =
+          await this.matchingEngine.tryMatch(
+              matchingId,
+          );
+
+      if (!attempt) {
+        await this.dummyMatching.tryFallback(
+            matchingId,
+        );
+      }
     } catch (error) {
-      this.logger.error('재탐색 시도 중 오류 발생', error as Error);
+      this.logger.error(
+          '재탐색 시도 중 오류 발생',
+          error as Error,
+      );
     }
 
     return this.findWithCurrentAttempt(matchingId);

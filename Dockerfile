@@ -26,8 +26,10 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
-COPY package.json ./
+# ts-node로 dummy seed 실행할 때 필요
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
+
+COPY package.json ./
 COPY --from=builder /app/assets ./assets
 
 EXPOSE 4000
