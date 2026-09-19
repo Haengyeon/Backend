@@ -10,6 +10,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ChatRoomStatus } from '../../generated/prisma/enums';
 import { SAFETY_USER_SELECT, toSafetyUser } from '../safety-user.util';
+import { StorageService } from '../../storage/storage.service';
 import {
   BlockListResponseDto,
   BlockResponseDto,
@@ -31,7 +32,10 @@ type BlockWithTarget = {
 
 @Injectable()
 export class BlockService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+      private readonly prisma: PrismaService,
+      private readonly storage: StorageService,
+  ) {}
 
   /**
    * 차단 처리. 신고 트랜잭션 안에서 호출된다.
@@ -44,13 +48,13 @@ export class BlockService {
    * 상황에서 유니크 위반으로 트랜잭션 전체가 롤백되면 신고까지 날아간다.
    */
   async applyBlock(
-    tx: Pick<PrismaService, 'userBlock' | 'chatRoom'>,
-    params: {
-      blockingUserId: string;
-      blockedUserId: string;
-      matchAttemptId: string;
-      chatRoomId: string | null;
-    },
+      tx: Pick<PrismaService, 'userBlock' | 'chatRoom'>,
+      params: {
+        blockingUserId: string;
+        blockedUserId: string;
+        matchAttemptId: string;
+        chatRoomId: string | null;
+      },
   ): Promise<void> {
     const already = await tx.userBlock.findUnique({
       where: {
@@ -94,7 +98,9 @@ export class BlockService {
       include: BLOCK_INCLUDE,
     });
 
-    return { items: blocks.map((block) => this.toDto(block)) };
+    return {
+      items: await Promise.all(blocks.map((block) => this.toDto(block))),
+    };
   }
 
   /**
@@ -122,10 +128,10 @@ export class BlockService {
     return [...new Set(userIds)];
   }
 
-  private toDto(block: BlockWithTarget): BlockResponseDto {
+  private async toDto(block: BlockWithTarget): Promise<BlockResponseDto> {
     return {
       blockId: block.id,
-      blockedUser: toSafetyUser(block.blockedUser),
+      blockedUser: await toSafetyUser(this.storage, block.blockedUser),
       createdAt: block.createdAt,
     };
   }

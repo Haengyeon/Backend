@@ -24,6 +24,8 @@ import {
 import { REGION_LABEL } from '../../course/algorithm/labels';
 import { RegionPreferenceDto } from '../dto/request/region-preference.dto';
 import {DummyMatchingService} from "../dummy/dummy-matching.service";
+import {StorageService} from "../../storage/storage.service";
+import {toProfileImageUrl} from "../../common/profile-image-url.util";
 
 @Injectable()
 export class MatchingService {
@@ -33,6 +35,7 @@ export class MatchingService {
       private readonly prisma: PrismaService,
       private readonly matchingEngine: MatchingEngineService,
       private readonly dummyMatching: DummyMatchingService,
+      private readonly storage: StorageService,
   ) {}
 
   async create(userId: string, dto: CreateMatchingDto) {
@@ -60,7 +63,7 @@ export class MatchingService {
         regionPreferences: {
           // 배열 순서가 곧 순위다. 1순위부터 시작하도록 +1
           create: this.toRegionPreferences(dto.regionPreferences).map(
-            (pref, index) => ({ ...pref, priority: index + 1 }),
+              (pref, index) => ({ ...pref, priority: index + 1 }),
           ),
         },
         ageMin: dto.ageMin,
@@ -133,7 +136,7 @@ export class MatchingService {
           regionPreferences: {
             deleteMany: {},
             create: this.toRegionPreferences(dto.regionPreferences).map(
-              (pref, index) => ({ ...pref, priority: index + 1 }),
+                (pref, index) => ({ ...pref, priority: index + 1 }),
             ),
           },
         }),
@@ -235,6 +238,28 @@ export class MatchingService {
         status: true,
         respondDeadlineAt: true,
         paymentDeadlineAt: true,
+        // 홈 배지에 상대 사진을 바로 그리려면 여기서 같이 내려줘야 한다.
+        // 프론트가 상세 API를 한 번 더 부르지 않아도 되게 한다.
+        matchingA: {
+          select: {
+            userId: true,
+            user: {
+              select: {
+                profile: { select: { name: true, profileImageUrl: true } },
+              },
+            },
+          },
+        },
+        matchingB: {
+          select: {
+            userId: true,
+            user: {
+              select: {
+                profile: { select: { name: true, profileImageUrl: true } },
+              },
+            },
+          },
+        },
       },
     };
 
@@ -249,7 +274,7 @@ export class MatchingService {
     });
 
     const { attemptsAsA, attemptsAsB, regionPreferences, ...rest } = matching;
-    const currentAttempt = attemptsAsA[0] ?? attemptsAsB[0] ?? null;
+    const rawAttempt = attemptsAsA[0] ?? attemptsAsB[0] ?? null;
 
     return {
       ...rest,
@@ -257,7 +282,47 @@ export class MatchingService {
         ...pref,
         sigunguName: sigunguNameOf(pref.region, pref.sigunguCode),
       })),
-      currentAttempt,
+      currentAttempt: await this.toCurrentAttempt(rawAttempt, rest.userId),
+    };
+  }
+
+  /** 진행 중인 매칭 시도에 상대 정보를 붙인다. 없으면 null. */
+  private async toCurrentAttempt(
+      attempt: {
+        id: string;
+        status: string;
+        respondDeadlineAt: Date;
+        paymentDeadlineAt: Date | null;
+        matchingA: {
+          userId: string;
+          user: { profile: { name: string; profileImageUrl: string } | null };
+        };
+        matchingB: {
+          userId: string;
+          user: { profile: { name: string; profileImageUrl: string } | null };
+        };
+      } | null,
+      myUserId: string,
+  ) {
+    if (!attempt) return null;
+
+    const { matchingA, matchingB, ...rest } = attempt;
+    const partnerProfile =
+        matchingA.userId === myUserId
+            ? matchingB.user.profile
+            : matchingA.user.profile;
+
+    return {
+      ...rest,
+      partner: {
+        // 탈퇴 등으로 프로필이 사라졌을 수 있어 방어적으로 처리한다
+        name: partnerProfile?.name ?? '알 수 없음',
+        // 사진은 비공개 버킷에 있어 경로만으로는 열리지 않는다
+        profileImageUrl: await toProfileImageUrl(
+            this.storage,
+            partnerProfile?.profileImageUrl,
+        ),
+      },
     };
   }
 
@@ -331,7 +396,7 @@ export class MatchingService {
 
       if (!sigunguCode) {
         throw new BadRequestException(
-          `${REGION_LABEL[pref.region]}에 없는 시군구입니다: ${pref.sigunguCode}`,
+            `${REGION_LABEL[pref.region]}에 없는 시군구입니다: ${pref.sigunguCode}`,
         );
       }
 
