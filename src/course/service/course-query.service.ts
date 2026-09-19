@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
+import { toProfileImageUrl } from '../../common/profile-image-url.util';
 import {
   CourseStatus,
   MatchAttemptStatus,
@@ -79,15 +80,15 @@ const detailInclude = {
 @Injectable()
 export class CourseQueryService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly storage: StorageService,
-    private readonly review: CourseReviewService,
+      private readonly prisma: PrismaService,
+      private readonly storage: StorageService,
+      private readonly review: CourseReviewService,
   ) {}
 
   /** 코스 상세. viewType으로 공개 범위를 잘라서 준다. */
   async getDetail(
-    userId: string,
-    courseId: string,
+      userId: string,
+      courseId: string,
   ): Promise<CourseDetailResponseDto> {
     const course = await this.prisma.course.findUnique({
       where: { id: courseId },
@@ -126,7 +127,7 @@ export class CourseQueryService {
       themeLabel: THEME_LABEL[course.theme],
       travelDate: toDateString(course.travelDate),
       dday,
-      partner: this.toPartnerDto(sides.partnerProfile),
+      partner: await this.toPartnerDto(sides.partnerProfile),
     };
 
     if (viewType === 'LOCKED') return base;
@@ -149,28 +150,28 @@ export class CourseQueryService {
     // 당일부터 지도와 스팟 전체를 연다.
     // 후기 수는 스팟마다 세지 않고 contentId 묶음으로 한 번에 받는다.
     const reviews = await this.spotReviewCounts(
-      userId,
-      course.spots.map((spot) => spot.contentId),
+        userId,
+        course.spots.map((spot) => spot.contentId),
     );
 
     // 인증샷은 DB에 객체 경로만 있다. 서명은 IAM을 타므로 한 번에 모아서 한다
     const signedPhotos = await this.storage.signMany(
-      course.spots.flatMap((spot) =>
-        spot.missions.flatMap((mission) =>
-          mission.photos.map((photo) => photo.imageUrl),
+        course.spots.flatMap((spot) =>
+            spot.missions.flatMap((mission) =>
+                mission.photos.map((photo) => photo.imageUrl),
+            ),
         ),
-      ),
     );
 
     const spots = course.spots.map((spot) =>
-      this.toSpotDto(
-        spot,
-        course.region,
-        userId,
-        sides.partnerUserId,
-        reviews,
-        signedPhotos,
-      ),
+        this.toSpotDto(
+            spot,
+            course.region,
+            userId,
+            sides.partnerUserId,
+            reviews,
+            signedPhotos,
+        ),
     );
 
     const full: CourseDetailResponseDto = {
@@ -192,12 +193,12 @@ export class CourseQueryService {
     return {
       ...full,
       video: course.video
-        ? {
+          ? {
             status: course.video.status,
             videoUrl: course.video.videoUrl,
             thumbnailUrl: course.video.thumbnailUrl,
           }
-        : null,
+          : null,
       review: await this.review.getMyReviews(userId, courseId),
     };
   }
@@ -240,13 +241,13 @@ export class CourseQueryService {
           // 상대 후기는 코스가 아니라 매칭에 붙어 있어서(코스가 없는 매칭에도
           // 써야 해서) matchAttempt를 거쳐 본다.
           ...(movedOn
-            ? []
-            : [
+              ? []
+              : [
                 {
                   status: CourseStatus.COMPLETED,
                   completedAt: {
                     gte: new Date(
-                      Date.now() - COMPLETED_CARD_HOURS * 60 * 60 * 1000,
+                        Date.now() - COMPLETED_CARD_HOURS * 60 * 60 * 1000,
                     ),
                   },
                   matchAttempt: {
@@ -284,11 +285,11 @@ export class CourseQueryService {
           dday: daysUntil(course.travelDate),
           status: course.status,
           thumbnailUrl: course.thumbnailUrl,
-          partner: this.toPartnerDto(sides.partnerProfile),
+          partner: await this.toPartnerDto(sides.partnerProfile),
           progress: {
             // 두 사람이 다 올려야 그 미션이 끝난 것으로 본다
             completedMissions: missions.filter((m) => m.photos.length >= 2)
-              .length,
+                .length,
             totalMissions: missions.length,
           },
         },
@@ -316,9 +317,9 @@ export class CourseQueryService {
 
   /** 완료 코스 목록. 최근에 끝난 것부터 커서 페이징. */
   async getHistory(
-    userId: string,
-    limit: number = HISTORY_DEFAULT_LIMIT,
-    cursor?: string,
+      userId: string,
+      limit: number = HISTORY_DEFAULT_LIMIT,
+      cursor?: string,
   ): Promise<CourseHistoryResponseDto> {
     const take = Math.min(Math.max(limit, 1), HISTORY_MAX_LIMIT);
 
@@ -347,52 +348,55 @@ export class CourseQueryService {
 
     // 대표 사진이 인증샷일 수 있어서 목록에도 서명이 필요하다
     const signedPhotos = await this.storage.signMany(
-      page.flatMap((course) =>
-        course.spots.flatMap((spot) =>
-          spot.missions.flatMap((mission) =>
-            mission.photos.map((photo) => photo.imageUrl),
-          ),
+        page.flatMap((course) =>
+            course.spots.flatMap((spot) =>
+                spot.missions.flatMap((mission) =>
+                    mission.photos.map((photo) => photo.imageUrl),
+                ),
+            ),
         ),
-      ),
     );
 
-    const items = page.map((course) => {
-      const sides = this.resolveSides(course.matchAttempt, userId)!;
-      const photos = course.spots.flatMap((spot) =>
-        spot.missions.flatMap((mission) => mission.photos),
-      );
-      // 목록 카드에 "서울 중구·종로구"를 적기 위한 것이다. 스팟은 사진을
-      // 세느라 이미 불러와 있어서 질의가 늘지 않는다.
-      //
-      // 지도 색칠에 쓰는 코드(mapSigunguCodes)는 여기서 주지 않는다. 목록은
-      // 페이징이라 한 번에 다 오지 않아서 다녀온 구 전체를 세기에 맞지 않고,
-      // 그건 스탬프 API가 모아서 준다.
-      const visited = this.visitedSigungu(course.spots, course.region);
+    // 상대 사진에 서명 URL을 만들어야 해서 콜백이 비동기다
+    const items = await Promise.all(
+        page.map(async (course) => {
+          const sides = this.resolveSides(course.matchAttempt, userId)!;
+          const photos = course.spots.flatMap((spot) =>
+              spot.missions.flatMap((mission) => mission.photos),
+          );
+          // 목록 카드에 "서울 중구·종로구"를 적기 위한 것이다. 스팟은 사진을
+          // 세느라 이미 불러와 있어서 질의가 늘지 않는다.
+          //
+          // 지도 색칠에 쓰는 코드(mapSigunguCodes)는 여기서 주지 않는다. 목록은
+          // 페이징이라 한 번에 다 오지 않아서 다녀온 구 전체를 세기에 맞지 않고,
+          // 그건 스탬프 API가 모아서 준다.
+          const visited = this.visitedSigungu(course.spots, course.region);
 
-      return {
-        id: course.id,
-        // 신고·차단 API가 이 값을 키로 받는다
-        matchAttemptId: course.matchAttemptId,
-        title: course.title,
-        region: course.region,
-        regionLabel: REGION_LABEL[course.region],
-        sigunguNames: visited.names,
-        theme: course.theme,
-        themeLabel: THEME_LABEL[course.theme],
-        travelDate: toDateString(course.travelDate),
-        completedAt: course.completedAt,
-        // 관광지 사진이 없으면 두 사람이 찍은 첫 인증샷을 대표로 쓴다
-        thumbnailUrl:
-          course.thumbnailUrl ??
-          (photos[0] ? (signedPhotos.get(photos[0].imageUrl) ?? null) : null),
-        partner: this.toPartnerDto(sides.partnerProfile),
-        photoCount: photos.length,
-        hasReview: course.reviews.length > 0,
-        // 목록에선 "영상 있음" 배지만 걸면 되니 상태만 준다.
-        // 실제 재생은 코스 상세에서 videoUrl을 받아서 한다.
-        video: course.video ? { status: course.video.status } : null,
-      };
-    });
+          return {
+            id: course.id,
+            // 신고·차단 API가 이 값을 키로 받는다
+            matchAttemptId: course.matchAttemptId,
+            title: course.title,
+            region: course.region,
+            regionLabel: REGION_LABEL[course.region],
+            sigunguNames: visited.names,
+            theme: course.theme,
+            themeLabel: THEME_LABEL[course.theme],
+            travelDate: toDateString(course.travelDate),
+            completedAt: course.completedAt,
+            // 관광지 사진이 없으면 두 사람이 찍은 첫 인증샷을 대표로 쓴다
+            thumbnailUrl:
+                course.thumbnailUrl ??
+                (photos[0] ? (signedPhotos.get(photos[0].imageUrl) ?? null) : null),
+            partner: await this.toPartnerDto(sides.partnerProfile),
+            photoCount: photos.length,
+            hasReview: course.reviews.length > 0,
+            // 목록에선 "영상 있음" 배지만 걸면 되니 상태만 준다.
+            // 실제 재생은 코스 상세에서 videoUrl을 받아서 한다.
+            video: course.video ? { status: course.video.status } : null,
+          };
+        }),
+    );
 
     return {
       items,
@@ -406,8 +410,8 @@ export class CourseQueryService {
    * 후기는 코스가 아니라 contentId에 붙어 있어 다른 코스 것까지 함께 잡힌다.
    */
   private async spotReviewCounts(
-    userId: string,
-    contentIds: (string | null)[],
+      userId: string,
+      contentIds: (string | null)[],
   ): Promise<Map<string, { count: number; mine: boolean }>> {
     const ids = contentIds.filter((id): id is string => id !== null);
     const result = new Map<string, { count: number; mine: boolean }>();
@@ -455,11 +459,11 @@ export class CourseQueryService {
    * 참여자가 아니면 null.
    */
   private resolveSides(
-    attempt: {
-      matchingA: { userId: string; user: { profile: unknown } };
-      matchingB: { userId: string; user: { profile: unknown } };
-    },
-    userId: string,
+      attempt: {
+        matchingA: { userId: string; user: { profile: unknown } };
+        matchingB: { userId: string; user: { profile: unknown } };
+      },
+      userId: string,
   ) {
     const isSideA = attempt.matchingA.userId === userId;
     const isSideB = attempt.matchingB.userId === userId;
@@ -476,13 +480,17 @@ export class CourseQueryService {
     };
   }
 
-  private toPartnerDto(
-    profile: { name: string; profileImageUrl: string } | null,
-  ): CoursePartnerDto {
+  private async toPartnerDto(
+      profile: { name: string; profileImageUrl: string } | null,
+  ): Promise<CoursePartnerDto> {
     // 프로필은 매칭 조건 생성 시점에 이미 검증되지만, 관계가 끊긴 경우를 대비한 기본값
     return {
       name: profile?.name ?? '알 수 없음',
-      profileImageUrl: profile?.profileImageUrl ?? '',
+      // 사진은 비공개 버킷에 있어 경로만으로는 열리지 않는다
+      profileImageUrl: await toProfileImageUrl(
+          this.storage,
+          profile?.profileImageUrl,
+      ),
     };
   }
 
@@ -495,8 +503,8 @@ export class CourseQueryService {
    * 이름은 화면에 쓴다.
    */
   private visitedSigungu(
-    spots: { sigunguCode: string | null; legalSigunguCode: string | null }[],
-    region: Region,
+      spots: { sigunguCode: string | null; legalSigunguCode: string | null }[],
+      region: Region,
   ) {
     const dedupe = (values: (string | null)[]) => [
       ...new Set(values.filter((value): value is string => value !== null)),
@@ -504,51 +512,51 @@ export class CourseQueryService {
 
     return {
       names: dedupe(
-        spots.map((spot) => sigunguNameOf(region, spot.sigunguCode)),
+          spots.map((spot) => sigunguNameOf(region, spot.sigunguCode)),
       ),
       codes: dedupe(
-        spots.map((spot) => mapSigunguCodeOf(spot.legalSigunguCode)),
+          spots.map((spot) => mapSigunguCodeOf(spot.legalSigunguCode)),
       ),
     };
   }
 
   private toSpotDto(
-    spot: {
-      id: string;
-      contentId: string | null;
-      order: number;
-      role: string | null;
-      name: string;
-      category: string | null;
-      description: string | null;
-      address: string;
-      sigunguCode: string | null;
-      legalSigunguCode: string | null;
-      latitude: number;
-      longitude: number;
-      imageUrl: string | null;
-      stayMinutes: number | null;
-      moveMinutesFromPrevious: number | null;
-      missions: {
+      spot: {
         id: string;
-        title: string;
+        contentId: string | null;
+        order: number;
+        role: string | null;
+        name: string;
+        category: string | null;
         description: string | null;
-        isRequired: boolean;
-        photos: {
+        address: string;
+        sigunguCode: string | null;
+        legalSigunguCode: string | null;
+        latitude: number;
+        longitude: number;
+        imageUrl: string | null;
+        stayMinutes: number | null;
+        moveMinutesFromPrevious: number | null;
+        missions: {
           id: string;
-          userId: string;
-          imageUrl: string;
-          comment: string | null;
-          createdAt: Date;
+          title: string;
+          description: string | null;
+          isRequired: boolean;
+          photos: {
+            id: string;
+            userId: string;
+            imageUrl: string;
+            comment: string | null;
+            createdAt: Date;
+          }[];
         }[];
-      }[];
-    },
-    // 시군구 코드는 시·도 안에서만 유일해서 이름으로 바꾸려면 지역이 필요하다
-    region: Region,
-    userId: string,
-    partnerUserId: string,
-    reviews: Map<string, { count: number; mine: boolean }>,
-    signedPhotos: Map<string, string>,
+      },
+      // 시군구 코드는 시·도 안에서만 유일해서 이름으로 바꾸려면 지역이 필요하다
+      region: Region,
+      userId: string,
+      partnerUserId: string,
+      reviews: Map<string, { count: number; mine: boolean }>,
+      signedPhotos: Map<string, string>,
   ): CourseSpotDto {
     // 알고리즘은 스팟당 미션 하나만 만든다
     const mission = spot.missions[0];
@@ -577,28 +585,28 @@ export class CourseQueryService {
       reviewCount: review?.count ?? 0,
       reviewWritten: review?.mine ?? false,
       mission: mission
-        ? {
+          ? {
             id: mission.id,
             title: mission.title,
             description: mission.description,
             isRequired: mission.isRequired,
             photoUploaded: mission.photos.some((p) => p.userId === userId),
             partnerPhotoUploaded: mission.photos.some(
-              (p) => p.userId === partnerUserId,
+                (p) => p.userId === partnerUserId,
             ),
             // 올린 순서대로. 완료된 코스에서는 이 두 장이 추억 페이지의 재료다.
             // 작성자는 "내 것인지"만 알려 준다 — 화면에서 구분할 수 있으면 충분하다.
             photos: [...mission.photos]
-              .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-              .map((photo) => ({
-                id: photo.id,
-                imageUrl: signedPhotos.get(photo.imageUrl) ?? '',
-                comment: photo.comment,
-                isMine: photo.userId === userId,
-                createdAt: photo.createdAt,
-              })),
+                .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+                .map((photo) => ({
+                  id: photo.id,
+                  imageUrl: signedPhotos.get(photo.imageUrl) ?? '',
+                  comment: photo.comment,
+                  isMine: photo.userId === userId,
+                  createdAt: photo.createdAt,
+                })),
           }
-        : null,
+          : null,
     };
   }
 
@@ -610,11 +618,11 @@ export class CourseQueryService {
     if (spots.length === 0) return { latitude: 0, longitude: 0 };
 
     const sum = spots.reduce(
-      (acc, spot) => ({
-        latitude: acc.latitude + spot.latitude,
-        longitude: acc.longitude + spot.longitude,
-      }),
-      { latitude: 0, longitude: 0 },
+        (acc, spot) => ({
+          latitude: acc.latitude + spot.latitude,
+          longitude: acc.longitude + spot.longitude,
+        }),
+        { latitude: 0, longitude: 0 },
     );
 
     return {

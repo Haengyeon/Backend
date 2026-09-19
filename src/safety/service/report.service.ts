@@ -12,6 +12,7 @@ import { ReportReasonCode, ReportStatus } from '../../generated/prisma/enums';
 import { resolveMatchPartner } from '../match-partner.util';
 import { BlockService } from './block.service';
 import { SAFETY_USER_SELECT, toSafetyUser } from '../safety-user.util';
+import { StorageService } from '../../storage/storage.service';
 import { CreateReportDto } from '../dto/request/create-report.dto';
 import {
   ReportListResponseDto,
@@ -61,8 +62,9 @@ export class ReportService {
   private readonly logger = new Logger(ReportService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly blocks: BlockService,
+      private readonly prisma: PrismaService,
+      private readonly blocks: BlockService,
+      private readonly storage: StorageService,
   ) {}
 
   /**
@@ -76,13 +78,13 @@ export class ReportService {
    * "신고는 접수됐는데 상대는 계속 매칭에 뜨는" 상태가 남는다.
    */
   async create(
-    userId: string,
-    dto: CreateReportDto,
+      userId: string,
+      dto: CreateReportDto,
   ): Promise<ReportResponseDto> {
     const { partnerUserId, chatRoomId } = await resolveMatchPartner(
-      this.prisma,
-      userId,
-      dto.matchAttemptId,
+        this.prisma,
+        userId,
+        dto.matchAttemptId,
     );
 
     try {
@@ -118,8 +120,8 @@ export class ReportService {
         where: { reportedUserId: partnerUserId },
       });
       const line =
-        `신고 접수: 대상=${partnerUserId} (누적 ${receivedCount}건), ` +
-        `사유=${dto.reasonCode}, 매칭=${dto.matchAttemptId}`;
+          `신고 접수: 대상=${partnerUserId} (누적 ${receivedCount}건), ` +
+          `사유=${dto.reasonCode}, 매칭=${dto.matchAttemptId}`;
 
       if (receivedCount >= REVIEW_THRESHOLD) {
         this.logger.warn(`[검토 필요] ${line}`);
@@ -151,14 +153,16 @@ export class ReportService {
       include: REPORT_INCLUDE,
     });
 
-    return { items: reports.map((report) => this.toDto(report)) };
+    return {
+      items: await Promise.all(reports.map((report) => this.toDto(report))),
+    };
   }
 
-  private toDto(report: ReportWithTarget): ReportResponseDto {
+  private async toDto(report: ReportWithTarget): Promise<ReportResponseDto> {
     return {
       reportId: report.id,
       matchAttemptId: report.matchAttemptId,
-      reportedUser: toSafetyUser(report.reportedUser),
+      reportedUser: await toSafetyUser(this.storage, report.reportedUser),
       reasonCode: report.reasonCode,
       reason: REASON_LABEL[report.reasonCode] ?? report.reasonCode,
       description: report.description,

@@ -25,6 +25,8 @@ import {calcAge} from "../../common/age.util";
 import { MATCHING_PAYMENT_AMOUNT } from "../../common/payment.constant";
 import { CourseGeneratorService } from '../../course/algorithm/course-generator.service';
 import { DummyPaymentService } from '../dummy/dummy-payment.service';
+import { StorageService } from '../../storage/storage.service';
+import { toProfileImageUrl } from '../../common/profile-image-url.util';
 
 const PAYMENT_WINDOW_MS = 6 * 60 * 60 * 1000; // 결제 유예 6시간
 
@@ -47,6 +49,7 @@ export class MatchAttemptService {
         private readonly notification: NotificationService,
         private readonly courseGenerator: CourseGeneratorService,
         private readonly dummyPayment: DummyPaymentService,
+        private readonly storage: StorageService,
     ) {}
 
     async findOne(userId: string, matchAttemptId: string) {
@@ -105,7 +108,11 @@ export class MatchAttemptService {
                 mbti: partnerProfile.mbti,
                 introduce: partnerProfile.introduce,
                 hobbies: partnerProfile.hobbies,
-                fullBodyImageUrl: partnerProfile.fullBodyImageUrl,
+                // 비공개 버킷이라 경로를 그대로 주면 열리지 않는다
+                fullBodyImageUrl: await toProfileImageUrl(
+                    this.storage,
+                    partnerProfile.fullBodyImageUrl,
+                ),
             },
         };
     }

@@ -2,6 +2,8 @@ import {Injectable, Logger, NotFoundException} from "@nestjs/common";
 import {ChatMessageService, MESSAGE_LIMIT_PER_USER} from "./chat-message.service";
 import {PrismaService} from "../../prisma/prisma.service";
 import {ChatRoomStatus} from "../../generated/prisma/enums";
+import { StorageService } from "../../storage/storage.service";
+import { toProfileImageUrl } from "../../common/profile-image-url.util";
 import {calcAge} from "../../common/age.util";
 
 type ChatRoomWriter = {
@@ -16,6 +18,7 @@ export class ChatRoomService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly chatMessage: ChatMessageService,
+        private readonly storage: StorageService,
     ) {}
 
     /**
@@ -147,8 +150,15 @@ export class ChatRoomService {
                 mbti: partnerProfile.mbti,
                 introduce: partnerProfile.introduce,
                 hobbies: partnerProfile.hobbies,
-                profileImageUrl: partnerProfile.profileImageUrl,
-                fullBodyImageUrl: partnerProfile.fullBodyImageUrl,
+                // 비공개 버킷이라 경로를 그대로 주면 열리지 않는다
+                profileImageUrl: await toProfileImageUrl(
+                    this.storage,
+                    partnerProfile.profileImageUrl,
+                ),
+                fullBodyImageUrl: await toProfileImageUrl(
+                    this.storage,
+                    partnerProfile.fullBodyImageUrl,
+                ),
             },
         };
     }
@@ -225,7 +235,10 @@ export class ChatRoomService {
 
                 // 탈퇴 등으로 프로필이 사라졌을 경우
                 partnerName: partnerProfile?.name ?? '알 수 없음',
-                partnerProfileImageUrl: partnerProfile?.profileImageUrl ?? '',
+                partnerProfileImageUrl: await toProfileImageUrl(
+                    this.storage,
+                    partnerProfile?.profileImageUrl,
+                ),
 
                 lastMessageContent: lastMessage?.content ?? null,
                 lastMessageAt: lastMessage?.createdAt ?? null,
