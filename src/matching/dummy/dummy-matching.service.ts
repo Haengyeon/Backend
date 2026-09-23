@@ -32,6 +32,61 @@ export class DummyMatchingService {
         private readonly matchAttemptService: MatchAttemptService,
     ) {}
 
+    /**
+     * 체험 조건에 맞는 더미가 있는지 미리 확인한다.
+     *
+     * 매칭을 저장한 뒤에 없다는 걸 알면 매칭이 남아
+     * 사용자가 조건을 바꿔 다시 시도할 때 "이미 진행 중인 매칭이 있습니다"에 막힌다.
+     * 그래서 저장 전에 이 메서드로 먼저 걸러낸다.
+     */
+    async hasEligibleDummy(params: {
+        excludeUserId: string;
+        ageMin: number;
+        ageMax: number;
+        preferredGender: PreferredGender;
+    }): Promise<boolean> {
+        const eligible = await this.findEligibleDummies(params);
+
+        return eligible.length > 0;
+    }
+
+    /** 지금 비어 있고 나이·성별 조건에 맞는 더미 목록 */
+    private async findEligibleDummies(params: {
+        excludeUserId: string;
+        ageMin: number;
+        ageMax: number;
+        preferredGender: PreferredGender;
+    }) {
+        const candidates = await this.prisma.user.findMany({
+            where: {
+                isDummy: true,
+                status: UserStatus.ACTIVE,
+                deletedAt: null,
+                id: { not: params.excludeUserId },
+
+                // 1차 필터.
+                // 동시 요청은 createDummyMatchingSafely의 advisory lock에서 다시 검사한다.
+                matchings: { none: { endedAt: null } },
+            },
+            include: { profile: true },
+        });
+
+        return candidates.filter((dummy) => {
+            if (!dummy.profile) return false;
+
+            const dummyAge = calcAge(dummy.profile.birthDate);
+
+            if (dummyAge < params.ageMin || dummyAge > params.ageMax) {
+                return false;
+            }
+
+            return this.matchesPreferredGender(
+                params.preferredGender,
+                dummy.profile.gender,
+            );
+        });
+    }
+
     async tryFallback(matchingId: string) {
         if (process.env.DEMO_MATCHING_ENABLED !== 'true') {
             return null;
@@ -56,6 +111,10 @@ export class DummyMatchingService {
 
         if (!matching) return null;
 
+        // 사용자가 체험을 고른 경우에만 가상 프로필과 연결한다.
+        // 실제 매칭을 원한 사람이 모르는 사이 더미와 붙으면 안 된다.
+        if (!matching.isExperience) return null;
+
         if (matching.status !== MatchingStatus.SEARCHING) {
             return null;
         }
@@ -64,44 +123,11 @@ export class DummyMatchingService {
             return null;
         }
 
-        const candidates = await this.prisma.user.findMany({
-            where: {
-                isDummy: true,
-                status: UserStatus.ACTIVE,
-                deletedAt: null,
-                id: {
-                    not: matching.userId,
-                },
-
-                // 1차 필터.
-                // 동시 요청은 아래 transaction + advisory lock에서 다시 검사한다.
-                matchings: {
-                    none: {
-                        endedAt: null,
-                    },
-                },
-            },
-            include: {
-                profile: true,
-            },
-        });
-
-        const eligible = candidates.filter((dummy) => {
-            if (!dummy.profile) return false;
-
-            const dummyAge = calcAge(dummy.profile.birthDate);
-
-            if (
-                dummyAge < matching.ageMin ||
-                dummyAge > matching.ageMax
-            ) {
-                return false;
-            }
-
-            return this.matchesPreferredGender(
-                matching.preferredGender,
-                dummy.profile.gender,
-            );
+        const eligible = await this.findEligibleDummies({
+            excludeUserId: matching.userId,
+            ageMin: matching.ageMin,
+            ageMax: matching.ageMax,
+            preferredGender: matching.preferredGender,
         });
 
         this.shuffle(eligible);
@@ -273,6 +299,8 @@ export class DummyMatchingService {
             const created = await tx.matching.create({
                 data: {
                     userId: dummyUserId,
+                    // 체험 매칭끼리만 후보가 되도록 같은 표시를 단다
+                    isExperience: true,
 
                     /*
                      * 실제 사용자의 나이를 정확히 포함시키면 된다.

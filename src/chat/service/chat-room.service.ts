@@ -137,6 +137,7 @@ export class ChatRoomService {
             status: chatRoom.status,
             openAt: chatRoom.openAt,
             travelDate: matchAttempt.travelDate,
+            isExperience: matchAttempt.isExperience,
             myRemainingCount: MESSAGE_LIMIT_PER_USER - usedCount,
             unreadCount,
 
@@ -231,6 +232,7 @@ export class ChatRoomService {
                 status: chatRoom.status,
                 openAt: chatRoom.openAt,
                 travelDate: matchAttempt.travelDate,
+                isExperience: matchAttempt.isExperience,
                 myRemainingCount: MESSAGE_LIMIT_PER_USER - usedCount,
 
                 // 탈퇴 등으로 프로필이 사라졌을 경우

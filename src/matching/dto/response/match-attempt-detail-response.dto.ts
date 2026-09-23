@@ -100,4 +100,11 @@ export class MatchAttemptDetailResponseDto {
     @Expose()
     @Type(() => PartnerProfileDto)
     partner: PartnerProfileDto;
+
+    @ApiProperty({
+        example: false,
+        description: '체험 매칭 여부. true면 상대는 가상 프로필이다',
+    })
+    @Expose()
+    isExperience: boolean;
 }

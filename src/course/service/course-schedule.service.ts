@@ -19,8 +19,8 @@ export class CourseScheduleService {
   private readonly logger = new Logger(CourseScheduleService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly completion: CourseCompletionService,
+      private readonly prisma: PrismaService,
+      private readonly completion: CourseCompletionService,
   ) {}
 
   /**
@@ -68,6 +68,9 @@ export class CourseScheduleService {
       where: {
         status: { in: OPEN_STATUSES },
         travelDate: { lt: today },
+        // 체험 코스는 [추억영상 예시 보기]로만 끝난다.
+        // 여기서 완료시키면 completeCourse가 포인트·스탬프를 줘 버린다.
+        matchAttempt: { isExperience: false },
       },
       select: {
         id: true,
@@ -87,15 +90,15 @@ export class CourseScheduleService {
       try {
         // 보상은 안에서 두 사람 몫이 다 나간다. 반환값은 요청자 기준이라 여기선 버린다
         const completed = await this.completion.completeCourse(
-          course.id,
-          matchingA.userId,
-          matchingB.userId,
+            course.id,
+            matchingA.userId,
+            matchingB.userId,
         );
         if (completed) closed++;
       } catch (error) {
         this.logger.error(
-          `코스 완료 처리에 실패했습니다. course=${course.id} — 다음 시간에 다시 시도합니다`,
-          error as Error,
+            `코스 완료 처리에 실패했습니다. course=${course.id} — 다음 시간에 다시 시도합니다`,
+            error as Error,
         );
       }
     }
