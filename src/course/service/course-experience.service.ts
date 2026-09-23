@@ -31,6 +31,7 @@ export class CourseExperienceService {
      *
      * 실제 완료 처리(completeCourse)를 타지 않는다. 그 경로는 포인트와 스탬프를 주는데,
      * 가상 상대와의 체험으로 실제 기록이 쌓이면 안 되기 때문이다.
+     * 다만 매칭을 닫는 일은 그쪽과 똑같이 해 준다 — 안 닫으면 다음 매칭을 못 한다.
      *
      * 이미 끝낸 체험이면 상태는 두고 영상 URL만 다시 준다.
      * 서명 URL이 24시간이라 나중에 다시 볼 때도 새로 받아야 한다.
@@ -40,7 +41,11 @@ export class CourseExperienceService {
 
         const attempt = await this.prisma.matchAttempt.findUniqueOrThrow({
             where: { id: course.matchAttemptId },
-            select: { isExperience: true },
+            select: {
+                isExperience: true,
+                matchingA: { select: { id: true } },
+                matchingB: { select: { id: true } },
+            },
         });
 
         if (!attempt.isExperience) {
@@ -48,12 +53,29 @@ export class CourseExperienceService {
         }
 
         if (course.status !== CourseStatus.COMPLETED) {
-            await this.prisma.course.update({
-                where: { id: courseId },
-                data: {
-                    status: CourseStatus.COMPLETED,
-                    completedAt: new Date(),
-                },
+            await this.prisma.$transaction(async (tx) => {
+                await tx.course.update({
+                    where: { id: courseId },
+                    data: {
+                        status: CourseStatus.COMPLETED,
+                        completedAt: new Date(),
+                    },
+                });
+
+                /*
+                 * 매칭을 닫아야 다음 매칭을 걸 수 있다.
+                 * 새 매칭은 "끝나지 않은 매칭이 있으면"(endedAt: null) 막히기 때문에,
+                 * 여기서 닫지 않으면 체험을 마친 사용자가 아무것도 못 하게 된다.
+                 *
+                 * 이미 닫힌 매칭(거절 3회로 EXHAUSTED된 경우 등)은 건드리지 않는다.
+                 */
+                await tx.matching.updateMany({
+                    where: {
+                        id: { in: [attempt.matchingA.id, attempt.matchingB.id] },
+                        endedAt: null,
+                    },
+                    data: { endedAt: new Date() },
+                });
             });
 
             this.logger.log(`체험 완료: course=${courseId}`);
