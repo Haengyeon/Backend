@@ -276,7 +276,9 @@ model Matching {
   // DTO에서 검증
   themes CourseTheme[]
 
-  status MatchingStatus @default(SEARCHING)
+  //체험매칭. 가상 프로필과만 연결, 여행일은 당일로 고정.
+  isExperience Boolean        @default(false)
+  status       MatchingStatus @default(SEARCHING)
 
   // 거절/시간초과 누적 횟수 (하루 3회 도달 시 EXHAUSTED, 매일 리셋)
   rejectionCount Int       @default(0)
@@ -358,11 +360,13 @@ model MatchAttempt {
   matchingBId String
 
   // 매칭 시 실제 확정된 조건
-  region      Region
+  region       Region
   // 확정된 시군구. 코스 후보를 이 범위로 좁힘.
-  sigunguCode String
-  theme       CourseTheme
-  travelDate  DateTime    @db.Date
+  sigunguCode  String
+  theme        CourseTheme
+  travelDate   DateTime    @db.Date
+  // 코스·채팅·영상·보상이 이 값 하나로 체험인지 가른다
+  isExperience Boolean     @default(false)
 
   status MatchAttemptStatus @default(WAITING_RESPONSE)
 

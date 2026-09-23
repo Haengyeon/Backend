@@ -5,6 +5,7 @@ import { CourseAccessService } from './service/course-access.service';
 import { CourseRewardService } from './service/course-reward.service';
 import { CoursePhotoService } from './service/course-photo.service';
 import { CourseCompletionService } from './service/course-completion.service';
+import { CourseExperienceService } from './service/course-experience.service';
 import { CourseReviewService } from './service/course-review.service';
 import { CourseScheduleService } from './service/course-schedule.service';
 import { CourseRecommendService } from './service/course-recommend.service';
@@ -24,6 +25,7 @@ import {VideoService} from "../video/service/video.service";
     CourseRewardService,
     CoursePhotoService,
     CourseCompletionService,
+    CourseExperienceService,
     CourseReviewService,
     CourseScheduleService,
     CourseRecommendService,

@@ -46,6 +46,8 @@ export class VideoScheduler {
             where: {
                 status: CourseStatus.COMPLETED,
                 video: null,
+                // 체험 코스는 샘플 영상을 보여주므로 실제로 만들지 않는다
+                matchAttempt: { isExperience: false },
                 // 인증샷이 한 장도 없으면 만들 영상이 없다
                 missions: { some: { photos: { some: {} } } },
             },

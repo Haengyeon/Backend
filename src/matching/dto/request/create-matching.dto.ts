@@ -4,10 +4,12 @@ import {
     ArrayMinSize,
     ArrayUnique,
     IsArray,
+    IsBoolean,
     IsDateString,
     IsEnum,
     ValidateNested,
     IsInt,
+    IsOptional,
     Matches,
     Min,
 } from 'class-validator';
@@ -93,4 +95,15 @@ export class CreateMatchingDto {
         message: 'availableDates는 YYYY-MM-DD 형식이어야 합니다.',
     })
     availableDates: string[];
+
+    @ApiProperty({
+        example: false,
+        required: false,
+        description:
+            '체험 매칭 여부. true면 가상 프로필과 매칭되고 여행일은 오늘로 고정된다 ' +
+            '(availableDates를 보내도 무시).',
+    })
+    @IsOptional()
+    @IsBoolean()
+    isExperience?: boolean;
 }

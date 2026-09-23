@@ -19,6 +19,7 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
+  ApiOkResponse,
   ApiOperation,
   ApiParam,
   ApiTags,
@@ -49,6 +50,8 @@ import { CreateMissionPhotoDto } from '../dto/request/create-mission-photo.dto';
 import { RegenerateCourseDto } from '../dto/request/regenerate-course.dto';
 import { CourseGeneratorService } from '../algorithm/course-generator.service';
 import { CurrentUser } from '../../auth/current-user.decorator';
+import { CourseExperienceService } from '../service/course-experience.service';
+import { CourseExperienceFinishResponseDto } from '../dto/response/course-experience-response.dto';
 
 @ApiTags('Course')
 @ApiBearerAuth()
@@ -61,6 +64,7 @@ export class CourseController {
       private readonly courseReview: CourseReviewService,
       private readonly courseGenerator: CourseGeneratorService,
       private readonly courseRecommend: CourseRecommendService,
+      private readonly courseExperience: CourseExperienceService,
   ) {}
 
   // 'current'와 'history'는 :courseId보다 먼저 선언해야 한다.
@@ -253,6 +257,24 @@ export class CourseController {
         courseId,
         dto,
     );
+  }
+
+  @Post(':courseId/experience/finish')
+  @ApiOperation({
+    summary: '체험 마치기 (샘플 추억영상)',
+    description:
+        '체험 매칭 코스를 완료로 바꾸고 샘플 추억영상을 돌려준다. ' +
+        '체험에서 올린 사진으로 만든 영상이 아니라 미리 만든 샘플이다. ' +
+        '포인트와 스탬프는 지급하지 않는다. ' +
+        '이미 끝낸 체험이면 영상 URL만 다시 내려준다(서명 URL 24시간).',
+  })
+  @ApiOkResponse({ type: CourseExperienceFinishResponseDto })
+  @ApiParam({ name: 'courseId' })
+  finishExperience(
+      @CurrentUser() userId: string,
+      @Param('courseId') courseId: string,
+  ): Promise<CourseExperienceFinishResponseDto> {
+    return this.courseExperience.finish(userId, courseId);
   }
 
   @Post('regenerate')

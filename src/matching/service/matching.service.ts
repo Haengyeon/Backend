@@ -41,7 +41,33 @@ export class MatchingService {
   async create(userId: string, dto: CreateMatchingDto) {
     await this.validateUser(userId);
     this.validateAgeRange(dto.ageMin, dto.ageMax);
-    this.validateAvailableDates(dto.availableDates);
+
+    const isExperience = dto.isExperience ?? false;
+
+    // 체험은 코스가 바로 보여야 해서 여행일을 오늘로 고정한다.
+    // 보낸 날짜는 쓰지 않는다.
+    const availableDates = isExperience
+        ? [this.kstToday()]
+        : dto.availableDates;
+
+    this.validateAvailableDates(availableDates);
+
+    // 맞는 더미가 없으면 매칭을 저장하기 전에 알려야 한다.
+    // 저장한 뒤에 실패하면 매칭이 남아 다시 시도할 때 409에 막힌다.
+    if (isExperience) {
+      const available = await this.dummyMatching.hasEligibleDummy({
+        excludeUserId: userId,
+        ageMin: dto.ageMin,
+        ageMax: dto.ageMax,
+        preferredGender: dto.preferredGender,
+      });
+
+      if (!available) {
+        throw new BadRequestException(
+            '조건에 맞는 체험 프로필이 없어요. 나이 범위나 선호 성별을 넓혀보세요.',
+        );
+      }
+    }
 
     const existingMatching = await this.prisma.matching.findFirst({
       where: {
@@ -70,9 +96,10 @@ export class MatchingService {
         ageMax: dto.ageMax,
         preferredGender: dto.preferredGender,
         themes: dto.themes,
+        isExperience,
 
         availableDates: {
-          create: [...new Set(dto.availableDates)].map((date) => ({
+          create: [...new Set(availableDates)].map((date) => ({
             date: this.parseDate(date),
           })),
         },
@@ -80,22 +107,7 @@ export class MatchingService {
     });
 
     try {
-      const attempt =
-          await this.matchingEngine.tryMatch(
-              matching.id,
-          );
-
-      /*
-       * 실제 사용자 후보를 먼저 탐색한다.
-       *
-       * 실제 후보가 하나라도 매칭되었다면
-       * 더미 fallback은 절대 실행하지 않는다.
-       */
-      if (!attempt) {
-        await this.dummyMatching.tryFallback(
-            matching.id,
-        );
-      }
+      await this.tryMatchByMode(matching.id, isExperience);
     } catch (error) {
       this.logger.error(
           '즉시 매칭 시도 중 오류 발생',
@@ -123,6 +135,11 @@ export class MatchingService {
     const ageMin = dto.ageMin ?? matching.ageMin;
     const ageMax = dto.ageMax ?? matching.ageMax;
     this.validateAgeRange(ageMin, ageMax);
+
+    // 체험은 여행일이 오늘로 고정이라 날짜 수정을 받지 않는다
+    if (matching.isExperience) {
+      dto.availableDates = undefined;
+    }
 
     if (dto.availableDates) {
       this.validateAvailableDates(dto.availableDates);
@@ -202,17 +219,13 @@ export class MatchingService {
       data: { status: MatchingStatus.SEARCHING },
     });
 
-    try {
-      const attempt =
-          await this.matchingEngine.tryMatch(
-              matchingId,
-          );
+    const { isExperience } = await this.prisma.matching.findUniqueOrThrow({
+      where: { id: matchingId },
+      select: { isExperience: true },
+    });
 
-      if (!attempt) {
-        await this.dummyMatching.tryFallback(
-            matchingId,
-        );
-      }
+    try {
+      await this.tryMatchByMode(matchingId, isExperience);
     } catch (error) {
       this.logger.error(
           '재탐색 시도 중 오류 발생',
@@ -238,6 +251,7 @@ export class MatchingService {
         status: true,
         respondDeadlineAt: true,
         paymentDeadlineAt: true,
+        isExperience: true,
         // 홈 배지에 상대 사진을 바로 그리려면 여기서 같이 내려줘야 한다.
         // 프론트가 상세 API를 한 번 더 부르지 않아도 되게 한다.
         matchingA: {
@@ -293,6 +307,7 @@ export class MatchingService {
         status: string;
         respondDeadlineAt: Date;
         paymentDeadlineAt: Date | null;
+        isExperience: boolean;
         matchingA: {
           userId: string;
           user: { profile: { name: string; profileImageUrl: string } | null };
@@ -324,6 +339,36 @@ export class MatchingService {
         ),
       },
     };
+  }
+
+  /**
+   * 체험이면 가상 프로필과, 아니면 실제 사용자와만 연결한다.
+   *
+   * 두 풀은 엔진에서도 isExperience로 갈라 두었지만, 호출 경로에서도 나눠 둔다.
+   * 실제 매칭을 고른 사람이 더미에 붙는 일이 구조적으로 생기지 않게 하기 위함이다.
+   */
+  private async tryMatchByMode(matchingId: string, isExperience: boolean) {
+    if (isExperience) {
+      await this.dummyMatching.tryFallback(matchingId);
+      return;
+    }
+
+    await this.matchingEngine.tryMatch(matchingId);
+  }
+
+  /** KST 기준 오늘. 'YYYY-MM-DD' */
+  private kstToday(): string {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+
+    const get = (type: string) =>
+        parts.find((part) => part.type === type)!.value;
+
+    return `${get('year')}-${get('month')}-${get('day')}`;
   }
 
   private parseDate(date: string): Date {

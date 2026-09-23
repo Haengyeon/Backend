@@ -13,6 +13,12 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
 import { toProfileImageUrl } from '../../common/profile-image-url.util';
 import {
+  EXPERIENCE_PARTNER_PHOTO_COMMENTS,
+  EXPERIENCE_PARTNER_PHOTO_PATHS,
+  EXPERIENCE_PARTNER_REVIEWS,
+  pickByCourse,
+} from '../../common/experience.constant';
+import {
   CourseStatus,
   MatchAttemptStatus,
   Region,
@@ -127,6 +133,7 @@ export class CourseQueryService {
       themeLabel: THEME_LABEL[course.theme],
       travelDate: toDateString(course.travelDate),
       dday,
+      isExperience: course.matchAttempt.isExperience,
       partner: await this.toPartnerDto(sides.partnerProfile),
     };
 
@@ -190,7 +197,7 @@ export class CourseQueryService {
     // 완료(COMPLETED)를 기다리지 않는다. 완료는 여행 다음 날인데 후기는 당일부터
     // 쓸 수 있어서, 완료를 기준으로 잡으면 그날 밤에 쓴 후기를 다시 못 본다.
     // 여기는 FULL 분기 안이라 이미 여행 당일이거나 그 뒤다.
-    return {
+    const detail = {
       ...full,
       video: course.video
           ? {
@@ -201,6 +208,87 @@ export class CourseQueryService {
           : null,
       review: await this.review.getMyReviews(userId, courseId),
     };
+
+    if (!course.matchAttempt.isExperience) return detail;
+
+    return this.fillExperiencePartner(course.id, detail);
+  }
+
+  /**
+   * 체험 코스의 비어 있는 상대 자리를 예시로 채운다.
+   *
+   * 상대가 가상 프로필이라 사진과 후기가 영영 비어 있게 되는데, 그러면
+   * 체험하는 사람이 "여기 뭐가 들어오는지"를 볼 수 없다.
+   * 조회 응답에만 채우고 DB에는 넣지 않는다 — 미션 완료나 보상에 섞이지 않게 하기 위함이다.
+   *
+   * 후기는 실제와 같은 규칙을 따른다. 내가 후기를 써야 상대 후기가 열린다.
+   * 그 과정을 직접 겪어 보는 것도 체험의 일부다.
+   */
+  private async fillExperiencePartner<
+      T extends {
+        spots?: CourseSpotDto[];
+        review?: {
+          myPartnerReview: { id: string; content: string; createdAt: Date } | null;
+          partnerReviewArrived: boolean;
+          receivedPartnerReview: {
+            id: string;
+            content: string;
+            createdAt: Date;
+          } | null;
+        } | null;
+      },
+  >(courseId: string, detail: T): Promise<T> {
+    const photoUrls = await this.storage.signMany(
+        EXPERIENCE_PARTNER_PHOTO_PATHS,
+    );
+
+    const spots = detail.spots?.map((spot, index) => {
+      if (!spot.mission) return spot;
+
+      const path =
+          EXPERIENCE_PARTNER_PHOTO_PATHS[
+          index % EXPERIENCE_PARTNER_PHOTO_PATHS.length
+              ];
+
+      return {
+        ...spot,
+        mission: {
+          ...spot.mission,
+          partnerPhotoUploaded: true,
+          photos: [
+            ...spot.mission.photos,
+            {
+              // DB 레코드가 아니라 화면용 예시라 고정된 가짜 id를 쓴다
+              id: `experience-${spot.mission.id}`,
+              imageUrl: photoUrls.get(path) ?? '',
+              comment:
+                  EXPERIENCE_PARTNER_PHOTO_COMMENTS[
+                  index % EXPERIENCE_PARTNER_PHOTO_COMMENTS.length
+                      ],
+              isMine: false,
+              createdAt: new Date(),
+            },
+          ],
+        },
+      };
+    });
+
+    const review = detail.review
+        ? {
+          ...detail.review,
+          partnerReviewArrived: true,
+          receivedPartnerReview: detail.review.myPartnerReview
+              ? {
+                id: `experience-review-${courseId}`,
+                content: pickByCourse(courseId, EXPERIENCE_PARTNER_REVIEWS),
+                createdAt: new Date(),
+              }
+              : null,
+        }
+        : detail.review;
+
+    // 제네릭 T에 스프레드 결과를 바로 넣으면 TS가 좁히지 못해 명시한다
+    return { ...detail, spots, review } as T;
   }
 
   /**

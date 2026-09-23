@@ -125,6 +125,9 @@ export class MatchingEngineService {
                     userId: { notIn: [matching.userId, ...excludedUserIds] },
                     status: MatchingStatus.SEARCHING,
                     endedAt: null,
+                    // 체험 매칭은 체험끼리만, 실제 매칭은 실제끼리만 붙는다.
+                    // 섞이면 실제 사용자가 가상 프로필과 만나 결제까지 하게 된다.
+                    isExperience: matching.isExperience,
                     // 시군구까지 겹쳐야 후보로 본다 (항상 필수, 완화 단계에서도 풀지 않는다).
                     // 시·도만 맞춰 붙이면 실제로 만나기엔 너무 멀어 취소로 이어지고,
                     // 그 취소가 거절 횟수로 쌓여 양쪽 다 손해를 본다.
@@ -334,6 +337,8 @@ export class MatchingEngineService {
                         ...this.pickSharedRegion(matching, candidate),
                         theme: this.pickSharedTheme(matching, candidate),
                         travelDate: this.pickSharedDate(matching, candidate),
+                        // 코스·채팅·영상·보상이 이 값 하나로 체험인지 가른다
+                        isExperience: matching.isExperience,
                         respondDeadlineAt: new Date(Date.now() + RESPOND_WINDOW_MS),
                     },
                 });
@@ -362,13 +367,6 @@ export class MatchingEngineService {
         return shared[0];
     }
 
-    // 겹치는 테마 중 하나 선택, 겹침이 없으면(취향 기반으로 매칭된 경우) 내 첫 테마로 대체
-    /**
-     * 겹치는 지역 중 하나를 여행 지역으로 확정한다.
-     *
-     * 후보 풀에서 이미 hasSome으로 걸렀으므로 겹치는 지역은 반드시 존재한다.
-     * 여러 개 겹치면 앞에 있는 것을 쓴다.
-     */
     /**
      * 함께 갈 지역(시·도 + 시군구)을 확정한다.
      *

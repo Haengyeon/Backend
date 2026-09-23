@@ -89,6 +89,7 @@ export class MatchAttemptService {
         return {
             id: attempt.id,
             status: attempt.status,
+            isExperience: attempt.isExperience,
             travelDate: attempt.travelDate,
             theme: attempt.theme,
             paymentAmount: MATCHING_PAYMENT_AMOUNT,

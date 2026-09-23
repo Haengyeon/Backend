@@ -97,8 +97,8 @@ export class CourseSpotMissionDto {
   @ApiProperty({
     type: [MissionPhotoDto],
     description:
-      '이 장소에 올라온 인증샷. 아직 없으면 빈 배열. ' +
-      '완료된 코스에서는 두 사람 것 2장이 다 들어 있어 추억 페이지를 그릴 수 있다',
+        '이 장소에 올라온 인증샷. 아직 없으면 빈 배열. ' +
+        '완료된 코스에서는 두 사람 것 2장이 다 들어 있어 추억 페이지를 그릴 수 있다',
   })
   photos: MissionPhotoDto[];
 }
@@ -132,13 +132,13 @@ export class CourseSpotDto {
   @ApiProperty({
     nullable: true,
     example:
-      '조선 시대의 궁궐로 자연과 건축이 조화를 이루는 아름다운 공간이에요.',
+        '조선 시대의 궁궐로 자연과 건축이 조화를 이루는 아름다운 공간이에요.',
     description:
-      '장소 소개글. 원문이 길어 문장 끝에서 끊어 보낸다. ' +
-      '목표는 50자지만 첫 문장이 그보다 길면 그 문장이 끝나는 데까지 간다(최대 100자). ' +
-      '말이 중간에 끊기는 것보다 조금 긴 편이 낫다는 판단이다. ' +
-      '한국관광공사 원문이라 말투가 문어체(~이다)다. ' +
-      '못 받아온 장소는 null이고, 그때는 소개 문단을 통째로 숨긴다',
+        '장소 소개글. 원문이 길어 문장 끝에서 끊어 보낸다. ' +
+        '목표는 50자지만 첫 문장이 그보다 길면 그 문장이 끝나는 데까지 간다(최대 100자). ' +
+        '말이 중간에 끊기는 것보다 조금 긴 편이 낫다는 판단이다. ' +
+        '한국관광공사 원문이라 말투가 문어체(~이다)다. ' +
+        '못 받아온 장소는 null이고, 그때는 소개 문단을 통째로 숨긴다',
   })
   description: string | null;
 
@@ -153,8 +153,8 @@ export class CourseSpotDto {
     nullable: true,
     example: '광진구',
     description:
-      '시군구 이름. 화면에 그대로 쓰면 된다. ' +
-      '코드가 없거나 표에 없는 코드면 null이고, 그때는 시군구 줄을 숨긴다',
+        '시군구 이름. 화면에 그대로 쓰면 된다. ' +
+        '코드가 없거나 표에 없는 코드면 null이고, 그때는 시군구 줄을 숨긴다',
   })
   sigunguName: string | null;
 
@@ -162,9 +162,9 @@ export class CourseSpotDto {
     nullable: true,
     example: '11050',
     description:
-      '지도에 칠할 때 쓰는 시군구 코드(서울 광진구 = 11050). ' +
-      'southkorea-maps의 kostat/2018 시군구 파일 code와 같은 값이라 그대로 대조하면 된다. ' +
-      '표에 없는 장소는 null이고, 그때는 지도에서 뺀다 — 엉뚱한 구를 칠하는 것보다 낫다',
+        '지도에 칠할 때 쓰는 시군구 코드(서울 광진구 = 11050). ' +
+        'southkorea-maps의 kostat/2018 시군구 파일 code와 같은 값이라 그대로 대조하면 된다. ' +
+        '표에 없는 장소는 null이고, 그때는 지도에서 뺀다 — 엉뚱한 구를 칠하는 것보다 낫다',
   })
   mapSigunguCode: string | null;
 
@@ -208,8 +208,8 @@ export class CourseDetailResponseDto {
 
   @ApiProperty({
     description:
-      '이 코스가 걸린 매칭 건. 신고(POST /safety/reports)와 ' +
-      '차단(POST /safety/blocks)에 그대로 넘긴다',
+        '이 코스가 걸린 매칭 건. 신고(POST /safety/reports)와 ' +
+        '차단(POST /safety/blocks)에 그대로 넘긴다',
   })
   matchAttemptId: string;
 
@@ -219,7 +219,7 @@ export class CourseDetailResponseDto {
   @ApiProperty({
     example: '서울',
     description:
-      '시·도 한글 이름. sigunguNames와 이어 붙이면 "서울 중구·종로구"가 된다',
+        '시·도 한글 이름. sigunguNames와 이어 붙이면 "서울 중구·종로구"가 된다',
   })
   regionLabel: string;
 
@@ -227,10 +227,10 @@ export class CourseDetailResponseDto {
     type: [String],
     example: ['중구', '종로구'],
     description:
-      '코스가 걸쳐 있는 시군구 이름. 방문 순서대로, 중복은 뺀다. ' +
-      'LOCKED에서도 나간다 — 매칭 확정 화면의 지역 배지가 이것이다. ' +
-      '여러 구에 걸치면 다 적는다. 한 곳만 골라 쓰면 두 곳을 가는 코스인데 ' +
-      '한 곳만 간다고 말하는 셈이라서다. 시군구를 모르는 코스는 빈 배열',
+        '코스가 걸쳐 있는 시군구 이름. 방문 순서대로, 중복은 뺀다. ' +
+        'LOCKED에서도 나간다 — 매칭 확정 화면의 지역 배지가 이것이다. ' +
+        '여러 구에 걸치면 다 적는다. 한 곳만 골라 쓰면 두 곳을 가는 코스인데 ' +
+        '한 곳만 간다고 말하는 셈이라서다. 시군구를 모르는 코스는 빈 배열',
   })
   sigunguNames: string[];
 
@@ -249,10 +249,18 @@ export class CourseDetailResponseDto {
   @ApiProperty({
     type: CoursePartnerDto,
     description:
-      '매칭 상대. LOCKED에서도 나간다 — 매칭을 수락할 때 이미 본 사람이라 ' +
-      '가릴 이유가 없고, 매칭 확정 화면이 두 사람 얼굴을 보여줘야 한다',
+        '매칭 상대. LOCKED에서도 나간다 — 매칭을 수락할 때 이미 본 사람이라 ' +
+        '가릴 이유가 없고, 매칭 확정 화면이 두 사람 얼굴을 보여줘야 한다',
   })
   partner: CoursePartnerDto;
+
+  @ApiProperty({
+    example: false,
+    description:
+        '체험 매칭 코스 여부. true면 상대는 가상 프로필이고, ' +
+        '상대 미션 사진과 후기는 예시로 채워져 내려간다',
+  })
+  isExperience: boolean;
 
   @ApiPropertyOptional({ example: '서울 로컬 맛집 코스' })
   title?: string;
@@ -282,8 +290,8 @@ export class CourseDetailResponseDto {
     type: [String],
     example: ['11020', '11010'],
     description:
-      '코스가 지나간 시군구의 지도 코드. 방문 순서대로, 중복은 뺀다. ' +
-      '지도에서 이 코스가 다녀온 구를 칠할 때 이 배열을 그대로 쓰면 된다',
+        '코스가 지나간 시군구의 지도 코드. 방문 순서대로, 중복은 뺀다. ' +
+        '지도에서 이 코스가 다녀온 구를 칠할 때 이 배열을 그대로 쓰면 된다',
   })
   mapSigunguCodes?: string[];
 
@@ -303,9 +311,9 @@ export class CourseDetailResponseDto {
   @ApiPropertyOptional({
     type: MyReviewResponseDto,
     description:
-      'FULL부터. 내가 쓴 후기와 상대가 나에게 쓴 후기. ' +
-      '후기는 여행 당일부터 쓸 수 있어 완료를 기다리지 않는다. ' +
-      'GET /courses/{courseId}/reviews와 같은 내용이라 화면이 따로 부르지 않아도 된다',
+        'FULL부터. 내가 쓴 후기와 상대가 나에게 쓴 후기. ' +
+        '후기는 여행 당일부터 쓸 수 있어 완료를 기다리지 않는다. ' +
+        'GET /courses/{courseId}/reviews와 같은 내용이라 화면이 따로 부르지 않아도 된다',
   })
   review?: MyReviewResponseDto;
 }
