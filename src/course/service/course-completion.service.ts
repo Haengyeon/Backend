@@ -11,6 +11,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -36,8 +37,41 @@ import {
 /** 미션 하나가 끝나려면 두 사람이 모두 올려야 한다 */
 const PHOTOS_PER_MISSION = 2;
 
-/** 완료 버튼을 누르려면 코스 전체에 이만큼 인증샷이 있어야 한다. 더 적으면 영상이 빈약하다 */
-const MIN_PHOTOS_TO_REQUEST = 3;
+/** 완료 버튼을 누르려면 내 인증샷 중 한마디까지 쓴 것이 이만큼 있어야 한다. 더 적으면 영상이 빈약하다 */
+export const MIN_COMMENTED_PHOTOS_TO_REQUEST = 2;
+
+/**
+ * 완료 버튼을 못 누르는 이유. 누를 수 있으면 null.
+ *
+ * 버튼 API와 코스 상세의 completionRequest.available이 같이 쓴다.
+ * 화면에서 켜진 버튼이 눌렀더니 400이 되면 안 되기 때문이다.
+ *
+ * 사진·한마디는 누르는 사람 몫만 본다. 완료는 둘 다 눌러야 하니 결국 두 사람 모두 채우게 된다.
+ * 한마디는 사진에 달리므로 "한마디 달린 내 사진 수"가 사진과 한마디 개수를 함께 센다.
+ */
+export function completionBlocker(
+  course: { status: CourseStatus; travelDate: Date; isExperience: boolean },
+  myCommentedPhotos: number,
+): HttpException | null {
+  if (course.status === CourseStatus.COMPLETED) {
+    return new ConflictException('이미 완료된 코스입니다');
+  }
+  if (course.status === CourseStatus.CANCELLED) {
+    return new BadRequestException('취소된 코스는 완료할 수 없어요');
+  }
+  if (course.isExperience) {
+    return new BadRequestException('체험 코스는 [추억영상 예시 보기]로 끝나요');
+  }
+  if (daysUntil(course.travelDate) > 0) {
+    return new BadRequestException('여행 당일부터 완료할 수 있어요');
+  }
+  if (myCommentedPhotos < MIN_COMMENTED_PHOTOS_TO_REQUEST) {
+    return new BadRequestException(
+      `두 사람 모두 사진과 한마디를 ${MIN_COMMENTED_PHOTOS_TO_REQUEST}개 이상 남겨야 완료할 수 있어요`,
+    );
+  }
+  return null;
+}
 
 @Injectable()
 export class CourseCompletionService {
@@ -59,29 +93,18 @@ export class CourseCompletionService {
   ): Promise<CourseCompletionRequestResponseDto> {
     const course = await this.access.loadCourseForUser(courseId, userId);
 
-    if (course.status === CourseStatus.COMPLETED) {
-      throw new ConflictException('이미 완료된 코스입니다');
-    }
-    if (course.status === CourseStatus.CANCELLED) {
-      throw new BadRequestException('취소된 코스는 완료할 수 없어요');
-    }
-    if (course.matchAttempt.isExperience) {
-      throw new BadRequestException(
-        '체험 코스는 [추억영상 예시 보기]로 끝나요',
-      );
-    }
-    if (daysUntil(course.travelDate) > 0) {
-      throw new BadRequestException('여행 당일부터 완료할 수 있어요');
-    }
-
-    const photoCount = await this.prisma.courseMissionPhoto.count({
-      where: { mission: { courseId } },
+    const myCommentedPhotos = await this.prisma.courseMissionPhoto.count({
+      where: { mission: { courseId }, userId, comment: { not: null } },
     });
-    if (photoCount < MIN_PHOTOS_TO_REQUEST) {
-      throw new BadRequestException(
-        `인증샷이 ${MIN_PHOTOS_TO_REQUEST}장 이상 있어야 완료할 수 있어요. 사진을 더 올려주세요`,
-      );
-    }
+    const blocker = completionBlocker(
+      {
+        status: course.status,
+        travelDate: course.travelDate,
+        isExperience: course.matchAttempt.isExperience,
+      },
+      myCommentedPhotos,
+    );
+    if (blocker) throw blocker;
 
     const partnerId = this.access.resolvePartnerId(course, userId);
 

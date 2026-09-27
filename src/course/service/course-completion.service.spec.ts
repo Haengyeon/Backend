@@ -33,13 +33,13 @@ const course = {
 function buildService({
   changedCount = 1,
   loaded = course,
-  photoCount = 3,
+  commentedPhotos = 2,
   partnerRequested = false,
   alreadyRequested = false,
 }: {
   changedCount?: number;
   loaded?: typeof course;
-  photoCount?: number;
+  commentedPhotos?: number;
   partnerRequested?: boolean;
   alreadyRequested?: boolean;
 } = {}) {
@@ -65,9 +65,11 @@ function buildService({
     .fn()
     .mockResolvedValue({ count: alreadyRequested ? 0 : 1 });
 
+  const countPhotos = jest.fn().mockResolvedValue(commentedPhotos);
+
   const prisma = {
     $transaction: jest.fn((run: (t: typeof tx) => unknown) => run(tx)),
-    courseMissionPhoto: { count: jest.fn().mockResolvedValue(photoCount) },
+    courseMissionPhoto: { count: countPhotos },
     courseCompletionRequest: {
       createMany: createRequest,
       count: jest.fn().mockResolvedValue(partnerRequested ? 1 : 0),
@@ -95,7 +97,7 @@ function buildService({
     notification,
   );
 
-  return { service, tx, reward, createRequest, notify };
+  return { service, tx, reward, createRequest, notify, countPhotos };
 }
 
 describe('completeCourse', () => {
@@ -183,14 +185,29 @@ describe('requestCompletion — 당일 완료 버튼', () => {
     expect(notify).not.toHaveBeenCalled();
   });
 
-  it('인증샷이 2장 이하면 사진을 더 올리라고 막는다', async () => {
-    const { service, createRequest } = buildService({ photoCount: 2 });
+  it('내 사진과 한마디가 2개 미만이면 막는다', async () => {
+    const { service, createRequest } = buildService({ commentedPhotos: 1 });
 
     await expect(service.requestCompletion('me', COURSE_ID)).rejects.toThrow(
-      '사진을 더 올려주세요',
+      '두 사람 모두 사진과 한마디를 2개 이상 남겨야 완료할 수 있어요',
     );
     // 막히면 누른 기록도 남기지 않는다
     expect(createRequest).not.toHaveBeenCalled();
+  });
+
+  it('누르는 사람의 한마디 달린 사진만 센다', async () => {
+    const { service, countPhotos } = buildService();
+
+    await service.requestCompletion('me', COURSE_ID);
+
+    // 상대 사진이나 한마디 없는 사진으로 기준을 채울 수 없다
+    expect(countPhotos).toHaveBeenCalledWith({
+      where: {
+        mission: { courseId: COURSE_ID },
+        userId: 'me',
+        comment: { not: null },
+      },
+    });
   });
 
   it('여행일 전에는 누를 수 없다', async () => {

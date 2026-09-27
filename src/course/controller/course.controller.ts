@@ -272,7 +272,8 @@ export class CourseController {
     description:
         '당일에 추억영상을 보고 싶은 두 사람이 누른다. 내가 누르면 상대에게 알림이 가고, ' +
         '둘 다 누르면 코스가 완료돼 영상·스탬프·포인트가 나가고 다시 매칭할 수 있다. ' +
-        '코스 전체 인증샷이 2장 이하면 400. 아무도 안 누르면 여행 다음 날 00시에 서버가 완료한다.',
+        '누르는 사람의 사진과 한마디가 2개 미만이면 400(코스 상세의 completionRequest.available이 false). ' +
+        '아무도 안 누르면 여행 다음 날 00시에 서버가 완료한다.',
   })
   @ApiParam({ name: 'courseId' })
   requestCompletion(
