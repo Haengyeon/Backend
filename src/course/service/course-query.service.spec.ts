@@ -171,9 +171,9 @@ describe('getDetail - 개발용 전체 조회', () => {
     ],
   };
 
-  function buildDetailService() {
+  function buildDetailService(course: object = lockedCourse) {
     const prisma = {
-      course: { findUnique: jest.fn().mockResolvedValue(lockedCourse) },
+      course: { findUnique: jest.fn().mockResolvedValue(course) },
     };
     const storage = {
       signMany: jest.fn().mockResolvedValue(new Map<string, string>()),
@@ -212,5 +212,81 @@ describe('getDetail - 개발용 전체 조회', () => {
         ignoreLock: true,
       }),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  // 완료 버튼은 누르는 사람의 사진·한마디가 2개 이상이어야 켜진다.
+  // 스팟마다 사진을 나눠 담아, 두 사람이 코스를 도는 모양 그대로 만든다.
+  describe('완료 버튼 활성화(available)', () => {
+    const photo = (userId: string, comment: string | null, n: number) => ({
+      id: `photo-${userId}-${n}`,
+      userId,
+      imageUrl: `mission-photos/${userId}-${n}.jpg`,
+      comment,
+      createdAt: new Date(),
+    });
+
+    const withPhotos = (
+      base: Omit<typeof lockedCourse, 'status'> & { status: CourseStatus },
+      photosBySpot: ReturnType<typeof photo>[][],
+    ) => ({
+      ...base,
+      spots: photosBySpot.map((photos, i) => ({
+        ...base.spots[0],
+        id: `spot-${i + 1}`,
+        order: i + 1,
+        missions: [
+          { ...base.spots[0].missions[0], id: `mission-${i + 1}`, photos },
+        ],
+      })),
+    });
+
+    const today = {
+      ...lockedCourse,
+      travelDate: new Date(),
+      status: CourseStatus.IN_PROGRESS,
+    };
+
+    it('내 사진과 한마디가 2개 이상이면 켠다', async () => {
+      const course = withPhotos(today, [
+        [photo(USER_ID, '첫 번째 한마디', 1)],
+        [photo(USER_ID, '두 번째 한마디', 2)],
+      ]);
+
+      const detail = await buildDetailService(course).getDetail(
+        USER_ID,
+        'course-1',
+      );
+
+      expect(detail.completionRequest?.available).toBe(true);
+    });
+
+    it('상대가 다 채웠어도 내 한마디가 모자라면 끈다', async () => {
+      const course = withPhotos(today, [
+        [photo(USER_ID, '한마디', 1), photo('partner-1', '상대 한마디', 1)],
+        [photo(USER_ID, null, 2), photo('partner-1', '상대 한마디', 2)],
+      ]);
+
+      const detail = await buildDetailService(course).getDetail(
+        USER_ID,
+        'course-1',
+      );
+
+      expect(detail.completionRequest?.available).toBe(false);
+    });
+
+    it('여행일 전에는 사진이 있어도 끈다', async () => {
+      const course = withPhotos(lockedCourse, [
+        [photo(USER_ID, '한마디', 1)],
+        [photo(USER_ID, '한마디', 2)],
+      ]);
+
+      const detail = await buildDetailService(course).getDetail(
+        USER_ID,
+        'course-1',
+        { ignoreLock: true },
+      );
+
+      expect(detail.completionRequest?.available).toBe(false);
+    });
   });
 });

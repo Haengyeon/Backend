@@ -40,6 +40,12 @@ export class CourseCompletionRequestStateDto {
       '상대가 눌렀는지. true면 "OO님이 완료 버튼을 눌렀어요"를 띄운다',
   })
   partner: boolean;
+
+  @ApiProperty({
+    description:
+      '내가 완료 버튼을 누를 수 있는지. 여행 당일 이후이고 내 사진과 한마디가 2개 이상일 때 true. false면 버튼을 끈다',
+  })
+  available: boolean;
 }
 
 export class CoursePartnerDto {

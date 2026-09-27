@@ -43,6 +43,7 @@ import {
   CourseHistoryResponseDto,
   CurrentCourseResponseDto,
 } from '../dto/response/course-list-response.dto';
+import { completionBlocker } from './course-completion.service';
 import { CourseReviewService } from './course-review.service';
 
 /** 진행중 코스로 볼 상태 */
@@ -195,6 +196,20 @@ export class CourseQueryService {
         partner: course.completionRequests.some(
             (r) => r.userId === sides.partnerUserId,
         ),
+        // 버튼 API와 같은 함수로 판단한다. false면 화면이 버튼을 끈다
+        available:
+            completionBlocker(
+                {
+                  status: course.status,
+                  travelDate: course.travelDate,
+                  isExperience: course.matchAttempt.isExperience,
+                },
+                course.spots
+                    .flatMap((spot) => spot.missions)
+                    .flatMap((mission) => mission.photos)
+                    .filter((photo) => photo.userId === userId && photo.comment)
+                    .length,
+            ) === null,
       },
       durationMinutes: course.durationMinutes,
       totalDistanceKm: course.totalDistanceKm,
