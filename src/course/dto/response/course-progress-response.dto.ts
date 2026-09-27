@@ -78,9 +78,35 @@ export class MissionPhotoResponseDto {
   @ApiProperty({ type: CourseProgressDto })
   courseProgress: CourseProgressDto;
 
-  // 인증샷으로는 코스가 끝나지 않는다. 완료는 여행 다음 날 서버가 처리하므로
-  // 업로드 응답에 completion(완료 결과)·courseCompletable(완료 가능 여부)을 싣지 않는다.
-  // 완료 여부는 코스 조회의 status로 확인한다.
+  @ApiProperty({
+    type: CourseCompletionResponseDto,
+    nullable: true,
+    description:
+      '이 요청으로 4곳 모두 두 사람의 사진과 한마디가 차서 코스가 끝났으면 완료 결과. ' +
+      '아직 남았거나 이미 끝나 있었으면 null',
+  })
+  completion: CourseCompletionResponseDto | null;
+}
+
+/** 완료 버튼 응답 */
+export class CourseCompletionRequestResponseDto {
+  @ApiProperty({ description: '두 사람 다 눌러 코스가 끝났는지' })
+  completed: boolean;
+
+  @ApiProperty({
+    description:
+      '상대가 이미 눌렀는지. 아직이면 상대에게 알림이 간다(처음 누를 때 한 번)',
+  })
+  partnerRequested: boolean;
+
+  @ApiProperty({
+    type: CourseCompletionResponseDto,
+    nullable: true,
+    description:
+      '이 요청으로 코스가 끝났으면 완료 결과(스탬프·포인트). ' +
+      '아직이거나 상대 쪽 요청이 먼저 닫았으면 null',
+  })
+  completion: CourseCompletionResponseDto | null;
 }
 
 /** 상대에게 남긴 한 줄. 작성 응답과 조회 응답이 같은 모양을 쓴다 */

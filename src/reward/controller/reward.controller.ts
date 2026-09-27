@@ -1,7 +1,7 @@
 // 리워드 API — 포인트와 스탬프 조회
 //
 // 적립하는 엔드포인트는 없다. 포인트도 스탬프도 코스를 완료할 때 서버가 자동으로
-// 주기 때문에(여행 다음 날 시계가 코스를 닫으면서 두 사람에게 지급) 클라이언트는
+// 주기 때문에(당일 자동 완료·완료 버튼이나 여행 다음 날 코스가 닫히면서 두 사람에게 지급) 클라이언트는
 // GET으로 읽기만 한다. 사용자가 누르는 "받기" 버튼을 두면 먼저 누른 쪽만 받게 된다.
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';

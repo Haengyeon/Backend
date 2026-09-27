@@ -77,6 +77,7 @@ const detailInclude = {
   ...participantInclude,
   // 완료된 코스에서만 쓰지만, 코스 한 건 조회에 붙는 1:1 관계라 늘 함께 읽는다
   video: true,
+  completionRequests: { select: { userId: true } },
   spots: {
     orderBy: { order: 'asc' },
     include: { missions: { include: { photos: true } } },
@@ -91,10 +92,14 @@ export class CourseQueryService {
       private readonly review: CourseReviewService,
   ) {}
 
-  /** 코스 상세. viewType으로 공개 범위를 잘라서 준다. */
+  /**
+   * 코스 상세. viewType으로 공개 범위를 잘라서 준다.
+   * ignoreLock은 개발용 전체 조회 전용이다. 여행일 전에도 FULL로 연다.
+   */
   async getDetail(
       userId: string,
       courseId: string,
+      { ignoreLock = false }: { ignoreLock?: boolean } = {},
   ): Promise<CourseDetailResponseDto> {
     const course = await this.prisma.course.findUnique({
       where: { id: courseId },
@@ -111,7 +116,7 @@ export class CourseQueryService {
     }
 
     const dday = daysUntil(course.travelDate);
-    const viewType = viewTypeOf(dday);
+    const viewType = ignoreLock ? 'FULL' : viewTypeOf(dday);
 
     const visited = this.visitedSigungu(course.spots, course.region);
 
@@ -184,6 +189,13 @@ export class CourseQueryService {
     const full: CourseDetailResponseDto = {
       ...withPreview,
       status: course.status,
+      // 당일 완료 버튼. 상대만 눌렀으면 화면이 "OO님이 완료 버튼을 눌렀어요"를 띄운다
+      completionRequest: {
+        mine: course.completionRequests.some((r) => r.userId === userId),
+        partner: course.completionRequests.some(
+            (r) => r.userId === sides.partnerUserId,
+        ),
+      },
       durationMinutes: course.durationMinutes,
       totalDistanceKm: course.totalDistanceKm,
       mapSigunguCodes: visited.codes,
@@ -194,7 +206,7 @@ export class CourseQueryService {
     // 다녀온 뒤 화면은 추억 페이지가 된다. 영상과 후기를 함께 실어
     // 화면이 한 번의 조회로 그려지게 한다.
     //
-    // 완료(COMPLETED)를 기다리지 않는다. 완료는 여행 다음 날인데 후기는 당일부터
+    // 완료(COMPLETED)를 기다리지 않는다. 당일에 안 닫히면 완료는 여행 다음 날인데 후기는 당일부터
     // 쓸 수 있어서, 완료를 기준으로 잡으면 그날 밤에 쓴 후기를 다시 못 본다.
     // 여기는 FULL 분기 안이라 이미 여행 당일이거나 그 뒤다.
     const detail = {
