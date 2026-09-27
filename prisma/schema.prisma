@@ -126,9 +126,10 @@ model User {
   chatMessageCounts ChatMessageCount[]
 
   // Course
-  missionPhotos CourseMissionPhoto[]
-  courseReviews CourseReview[]
-  spotReviews   SpotReview[]
+  missionPhotos            CourseMissionPhoto[]
+  courseReviews            CourseReview[]
+  spotReviews              SpotReview[]
+  courseCompletionRequests CourseCompletionRequest[]
 
   // 상대 후기는 쓴 쪽과 평가받은 쪽 양방향으로 걸린다
   partnerReviewsWritten  PartnerReview[] @relation("PartnerReviewWriter")
@@ -594,6 +595,8 @@ model Course {
 
   video CourseVideo?
 
+  completionRequests CourseCompletionRequest[]
+
   pointTransactions PointTransaction[]
   stamps            Stamp[]
 }
@@ -759,6 +762,27 @@ model CourseMissionPhoto {
 
   // 사용자 한 명이 같은 미션에 인증샷 한 장
   @@unique([missionId, userId])
+}
+
+// ============================================================
+// COURSE COMPLETION REQUEST
+//
+// 당일 완료 버튼. 두 사람이 다 눌러야 코스가 끝난다.
+// 안 누르면 여행 다음 날 시계가 닫는다.
+// ============================================================
+
+model CourseCompletionRequest {
+  id       String @id @default(uuid())
+  courseId String
+  userId   String
+
+  createdAt DateTime @default(now())
+
+  course Course @relation(fields: [courseId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  // 한 사람이 한 번만 누른다
+  @@unique([courseId, userId])
 }
 
 // ============================================================
