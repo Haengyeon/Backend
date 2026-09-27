@@ -31,6 +31,17 @@ export class CourseVideoDto {
   thumbnailUrl: string | null;
 }
 
+export class CourseCompletionRequestStateDto {
+  @ApiProperty({ description: '내가 완료 버튼을 눌렀는지' })
+  mine: boolean;
+
+  @ApiProperty({
+    description:
+      '상대가 눌렀는지. true면 "OO님이 완료 버튼을 눌렀어요"를 띄운다',
+  })
+  partner: boolean;
+}
+
 export class CoursePartnerDto {
   @ApiProperty({ example: '노글리' })
   name: string;
@@ -279,6 +290,12 @@ export class CourseDetailResponseDto {
     description: 'FULL에서만. 진행중/완료로 화면이 갈린다',
   })
   status?: CourseStatus;
+
+  @ApiPropertyOptional({
+    type: CourseCompletionRequestStateDto,
+    description: 'FULL에서만. 당일 완료 버튼을 누가 눌렀는지',
+  })
+  completionRequest?: CourseCompletionRequestStateDto;
 
   @ApiPropertyOptional({ nullable: true, example: 390 })
   durationMinutes?: number | null;

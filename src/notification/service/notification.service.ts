@@ -18,6 +18,7 @@ export enum NotificationType {
 
   COURSE_D2 = 'COURSE_D2',
   COURSE_D1 = 'COURSE_D1',
+  COURSE_COMPLETION_REQUESTED = 'COURSE_COMPLETION_REQUESTED',
   COURSE_COMPLETED = 'COURSE_COMPLETED',
 }
 
@@ -78,6 +79,13 @@ const NOTIFICATION_TEXT: Record<
     body:
         '소요 시간과 준비물을 확인해보세요. ' +
         '상세 코스는 당일에 열려요.',
+    path: '/course',
+  },
+
+  // 푸시 문구는 타입마다 고정이라 상대 이름은 앱 화면에서 보여준다
+  [NotificationType.COURSE_COMPLETION_REQUESTED]: {
+    title: '상대가 여행 완료를 눌렀어요',
+    body: '사진을 다 올리고 완료 버튼을 눌러주세요. 둘 다 누르면 추억영상을 만들어요.',
     path: '/course',
   },
 

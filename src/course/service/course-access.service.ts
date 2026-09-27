@@ -19,6 +19,7 @@ export class CourseAccessService {
       include: {
         matchAttempt: {
           select: {
+            isExperience: true,
             matchingA: { select: { userId: true } },
             matchingB: { select: { userId: true } },
           },

@@ -5,6 +5,7 @@
 // 서버는 버튼이 눌렸다는 신호를 따로 받지 않는다. 코스가 완료될 때 그 코스의
 // 매칭이 모두 닫히므로(endedAt), "열린 매칭이 있다"를 "사용자가 스스로 다음
 // 사이클을 열었다"로 읽는다.
+import { ForbiddenException } from '@nestjs/common';
 import { CourseQueryService } from './course-query.service';
 import { CourseReviewService } from './course-review.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -115,5 +116,101 @@ describe('getCurrent - 완료 카드', () => {
     const hoursAgo =
       (Date.now() - completed!.completedAt!.gte.getTime()) / (60 * 60 * 1000);
     expect(hoursAgo).toBeCloseTo(24, 1);
+  });
+});
+
+// 개발용 전체 조회(GET /courses/:courseId/full)는 여행일 잠금만 푼다.
+describe('getDetail - 개발용 전체 조회', () => {
+  // 여행일이 한참 남아 평소라면 LOCKED인 코스
+  const lockedCourse = {
+    id: 'course-1',
+    matchAttemptId: 'attempt-1',
+    title: '서울 야경 데이트 코스',
+    description: null,
+    region: 'SEOUL',
+    theme: 'NIGHT_DATE',
+    travelDate: new Date('2099-01-01'),
+    thumbnailUrl: null,
+    durationMinutes: 240,
+    totalDistanceKm: 5.2,
+    status: CourseStatus.UPCOMING,
+    video: null,
+    completionRequests: [],
+    matchAttempt: {
+      isExperience: false,
+      matchingA: { userId: USER_ID, user: { profile: null } },
+      matchingB: { userId: 'partner-1', user: { profile: null } },
+    },
+    spots: [
+      {
+        id: 'spot-1',
+        contentId: null,
+        order: 1,
+        role: null,
+        name: '서울스카이',
+        category: null,
+        description: null,
+        address: '서울 송파구',
+        sigunguCode: null,
+        legalSigunguCode: null,
+        latitude: 37.5,
+        longitude: 127.1,
+        imageUrl: null,
+        stayMinutes: 60,
+        moveMinutesFromPrevious: null,
+        missions: [
+          {
+            id: 'mission-1',
+            title: '야경 사진 찍기',
+            description: null,
+            isRequired: true,
+            photos: [],
+          },
+        ],
+      },
+    ],
+  };
+
+  function buildDetailService() {
+    const prisma = {
+      course: { findUnique: jest.fn().mockResolvedValue(lockedCourse) },
+    };
+    const storage = {
+      signMany: jest.fn().mockResolvedValue(new Map<string, string>()),
+    } as unknown as StorageService;
+    const review = {
+      getMyReviews: jest.fn().mockResolvedValue({}),
+    } as unknown as CourseReviewService;
+
+    return new CourseQueryService(
+      prisma as unknown as PrismaService,
+      storage,
+      review,
+    );
+  }
+
+  it('평소 조회는 여행일 전이라 장소를 가린다', async () => {
+    const detail = await buildDetailService().getDetail(USER_ID, 'course-1');
+
+    expect(detail.viewType).toBe('LOCKED');
+    expect(detail.spots).toBeUndefined();
+  });
+
+  it('ignoreLock이면 여행일 전에도 장소와 미션까지 준다', async () => {
+    const detail = await buildDetailService().getDetail(USER_ID, 'course-1', {
+      ignoreLock: true,
+    });
+
+    expect(detail.viewType).toBe('FULL');
+    expect(detail.spots?.[0].name).toBe('서울스카이');
+    expect(detail.spots?.[0].mission?.title).toBe('야경 사진 찍기');
+  });
+
+  it('참여자가 아니면 ignoreLock이어도 막는다', async () => {
+    await expect(
+      buildDetailService().getDetail('stranger', 'course-1', {
+        ignoreLock: true,
+      }),
+    ).rejects.toThrow(ForbiddenException);
   });
 });

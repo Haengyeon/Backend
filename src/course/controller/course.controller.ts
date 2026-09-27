@@ -9,6 +9,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UploadedFile,
@@ -39,7 +40,7 @@ import {
   CurrentCourseResponseDto,
 } from '../dto/response/course-list-response.dto';
 import {
-  CourseCompletionResponseDto,
+  CourseCompletionRequestResponseDto,
   CourseReviewResponseDto,
   MissionPhotoResponseDto,
 } from '../dto/response/course-progress-response.dto';
@@ -47,6 +48,7 @@ import { CreateCourseReviewDto } from '../dto/request/create-course-review.dto';
 import { SpotReviewQueryDto } from '../dto/request/spot-review-query.dto';
 import { SpotReviewListResponseDto } from '../dto/response/spot-review-response.dto';
 import { CreateMissionPhotoDto } from '../dto/request/create-mission-photo.dto';
+import { UpdateMissionPhotoDto } from '../dto/request/update-mission-photo.dto';
 import { RegenerateCourseDto } from '../dto/request/regenerate-course.dto';
 import { CourseGeneratorService } from '../algorithm/course-generator.service';
 import { CurrentUser } from '../../auth/current-user.decorator';
@@ -160,6 +162,22 @@ export class CourseController {
     return this.courseQuery.getDetail(userId, courseId);
   }
 
+  @Get(':courseId/full')
+  @ApiOperation({
+    summary: '[개발용] 코스 전체 조회',
+    description:
+        '코스 정보 조회와 같은 응답을 여행일 잠금 없이 FULL로 준다. ' +
+        '매칭이 확정되자마자 장소·미션까지 확인할 때 쓴다. ' +
+        '코스 참여자만 조회할 수 있다.',
+  })
+  @ApiParam({ name: 'courseId' })
+  getFullDetail(
+      @CurrentUser() userId: string,
+      @Param('courseId') courseId: string,
+  ): Promise<CourseDetailResponseDto> {
+    return this.courseQuery.getDetail(userId, courseId, { ignoreLock: true });
+  }
+
   // 후기 조회 전용 엔드포인트는 두지 않는다.
   //   보기   — 완료된 코스의 GET /courses/:courseId 응답에 review로 들어 있다
   //   쓴 직후 — POST /courses/:courseId/reviews 응답이 상대 후기까지 돌려준다
@@ -171,8 +189,9 @@ export class CourseController {
     description:
         '사진 파일을 직접 올린다. 사용자 한 명이 같은 미션에 한 장만 올릴 수 있다. ' +
         '응답의 imageUrl은 24시간짜리 서명 URL이다. 만료되면 코스 조회로 새로 받는다. ' +
-        '사진을 다 채워도 코스는 끝나지 않는다. 완료는 여행 다음 날 서버가 처리하고 ' +
-        '그때 스탬프와 포인트가 두 사람에게 지급된다.',
+        '이 업로드로 4곳 모두 두 사람의 사진과 한마디가 다 차면 코스가 바로 완료되고 ' +
+        '스탬프와 포인트가 두 사람에게 지급된다(응답의 completion). ' +
+        '못 채우면 완료 버튼이나 여행 다음 날 서버가 완료한다.',
   })
   @ApiParam({ name: 'courseId' })
   @ApiParam({ name: 'missionId' })
@@ -220,20 +239,47 @@ export class CourseController {
     );
   }
 
-  @Post(':courseId/completions')
+  @Patch(':courseId/missions/:missionId/photos/:photoId')
   @ApiOperation({
-    summary: '코스 완료 처리 (예비)',
+    summary: '인증샷 한마디 쓰기·고치기',
     description:
-        '코스는 여행 다음 날 서버가 자동으로 완료하므로 보통은 부를 일이 없다. ' +
-        '자동 처리가 실패해 코스가 열린 채 남았을 때 쓰는 예비 경로다. ' +
-        '조건은 같아서 여행일이 지나야 하고, 당일에 부르면 400이다.',
+        '올린 인증샷에 한마디를 쓰거나 고친다. 내 사진만 된다. 빈 문자열이면 지운다. ' +
+        '이 한마디로 4곳 모두 두 사람의 사진과 한마디가 다 차면 코스가 바로 완료된다' +
+        '(응답의 completion). 완료 뒤에 고친 한마디는 이미 만든 영상에 들어가지 않는다.',
   })
   @ApiParam({ name: 'courseId' })
-  complete(
+  @ApiParam({ name: 'missionId' })
+  @ApiParam({ name: 'photoId' })
+  updateMissionPhoto(
       @CurrentUser() userId: string,
       @Param('courseId') courseId: string,
-  ): Promise<CourseCompletionResponseDto> {
-    return this.courseCompletion.complete(userId, courseId);
+      @Param('missionId') missionId: string,
+      @Param('photoId') photoId: string,
+      @Body() dto: UpdateMissionPhotoDto,
+  ): Promise<MissionPhotoResponseDto> {
+    return this.coursePhoto.updateComment(
+        userId,
+        courseId,
+        missionId,
+        photoId,
+        dto.comment,
+    );
+  }
+
+  @Post(':courseId/completions')
+  @ApiOperation({
+    summary: '여행 완료 버튼',
+    description:
+        '당일에 추억영상을 보고 싶은 두 사람이 누른다. 내가 누르면 상대에게 알림이 가고, ' +
+        '둘 다 누르면 코스가 완료돼 영상·스탬프·포인트가 나가고 다시 매칭할 수 있다. ' +
+        '코스 전체 인증샷이 2장 이하면 400. 아무도 안 누르면 여행 다음 날 00시에 서버가 완료한다.',
+  })
+  @ApiParam({ name: 'courseId' })
+  requestCompletion(
+      @CurrentUser() userId: string,
+      @Param('courseId') courseId: string,
+  ): Promise<CourseCompletionRequestResponseDto> {
+    return this.courseCompletion.requestCompletion(userId, courseId);
   }
 
   @Post(':courseId/reviews')

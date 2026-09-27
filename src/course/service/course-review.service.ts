@@ -52,7 +52,7 @@ export class CourseReviewService {
   ): Promise<CourseReviewResponseDto> {
     const course = await this.access.loadCourseForUser(courseId, userId);
 
-    // 완료(여행 다음 날)까지 기다리게 하면 데이트를 마친 그날 밤에 후기를 못 쓴다.
+    // 완료(당일에 안 닫히면 여행 다음 날)까지 기다리게 하면 그날 밤에 후기를 못 쓴다.
     // 후기는 보상과 무관해서 완료 상태에 묶을 이유가 없다. 다녀온 날부터 연다.
     if (daysUntil(course.travelDate) > 0) {
       throw new BadRequestException('여행 당일부터 후기를 남길 수 있어요');
